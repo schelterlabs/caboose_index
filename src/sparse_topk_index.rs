@@ -1,4 +1,4 @@
-use crate::similar_user::SimilarUser;
+use crate::similar_row::SimilarRow;
 use crate::row_accumulator::RowAccumulator;
 use crate::topk::{TopK, TopkUpdate};
 
@@ -6,6 +6,7 @@ use std::clone::Clone;
 use std::collections::binary_heap::Iter;
 use std::collections::BinaryHeap;
 use sprs::CsMat;
+use std::marker::Sync;
 
 use num_cpus::get_physical;
 use rayon::prelude::*;
@@ -14,43 +15,43 @@ use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
 
 use crate::utils::zero_out_entry;
 
-pub struct UserSimilarityIndex<S: Similarity> {
-    user_representations:  CsMat<f64>,
-    user_representations_transposed: CsMat<f64>,
-    topk_per_user: Vec<TopK>,
+pub struct SparseTopKIndex<S: Similarity> {
+    representations: CsMat<f64>,
+    representations_transposed: CsMat<f64>,
+    topk_per_row: Vec<TopK>,
     k: usize,
     similarity: S,
     norms: Vec<f64>,
 }
 
-impl<S: Similarity + std::marker::Sync> UserSimilarityIndex<S> {
+impl<S: Similarity + Sync> SparseTopKIndex<S> {
 
-    pub fn neighbors(&self, user: usize) -> Iter<SimilarUser> {
-        self.topk_per_user[user].iter()
+    pub fn neighbors(&self, row: usize) -> Iter<SimilarRow> {
+        self.topk_per_row[row].iter()
     }
 
-    pub fn new(user_representations: CsMat<f64>, k: usize, similarity: S) -> Self {
-        let (num_users, _) = user_representations.shape();
+    pub fn new(representations: CsMat<f64>, k: usize, similarity: S) -> Self {
+        let (num_rows, _) = representations.shape();
 
         //println!("--Creating transposed copy...");
-        let mut user_representations_transposed: CsMat<f64> = user_representations.to_owned();
-        user_representations_transposed.transpose_mut();
-        user_representations_transposed = user_representations_transposed.to_csr();
+        let mut representations_transposed: CsMat<f64> = representations.to_owned();
+        representations_transposed.transpose_mut();
+        representations_transposed = representations_transposed.to_csr();
 
-        let data = user_representations.data();
-        let indices = user_representations.indices();
-        let indptr = user_representations.indptr();
-        let data_t = user_representations_transposed.data();
-        let indices_t = user_representations_transposed.indices();
-        let indptr_t = user_representations_transposed.indptr();
+        let data = representations.data();
+        let indices = representations.indices();
+        let indptr = representations.indptr();
+        let data_t = representations_transposed.data();
+        let indices_t = representations_transposed.indices();
+        let indptr_t = representations_transposed.indptr();
 
         //println!("--Computing l2 norms...");
         //TODO is it worth to parallelize this?
-        let norms: Vec<f64> = (0..num_users)
-            .map(|user| {
+        let norms: Vec<f64> = (0..num_rows)
+            .map(|row| {
                 let mut norm_accumulator: f64 = 0.0;
-                for item_index in indptr.outer_inds_sz(user) {
-                    let value = data[item_index];
+                for column_index in indptr.outer_inds_sz(row) {
+                    let value = data[column_index];
                     norm_accumulator += similarity.accumulate_norm(value);
                 }
                 similarity.finalize_norm(norm_accumulator)
@@ -58,40 +59,40 @@ impl<S: Similarity + std::marker::Sync> UserSimilarityIndex<S> {
             .collect();
 
         let num_cores = get_physical();
-        let user_range = (0..num_users).collect::<Vec<usize>>();
+        let row_range = (0..num_rows).collect::<Vec<usize>>();
 
-        let topk_partitioned: Vec<_> = user_range.par_chunks(num_cores).map(|range| {
-            let mut topk_per_user: Vec<TopK> = Vec::with_capacity(range.len());
-            let mut accumulator = RowAccumulator::new(num_users.clone());
-            for user in range {
-                for item_index in indptr.outer_inds_sz(*user) {
-                    let value = data[item_index];
-                    for user_index in indptr_t.outer_inds_sz(indices[item_index]) {
+        let topk_partitioned: Vec<_> = row_range.par_chunks(num_cores).map(|range| {
+            let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
+            let mut accumulator = RowAccumulator::new(num_rows.clone());
+            for row in range {
+                for column_index in indptr.outer_inds_sz(*row) {
+                    let value = data[column_index];
+                    for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
                         accumulator.add_to(
-                            indices_t[user_index],
-                            data_t[user_index] * value.clone()
+                            indices_t[other_row],
+                            data_t[other_row] * value.clone()
                         );
                     }
                 }
 
-                let topk = accumulator.topk_and_clear(*user, k, &similarity, &norms);
-                topk_per_user.push(topk);
+                let topk = accumulator.topk_and_clear(*row, k, &similarity, &norms);
+                topk_per_row.push(topk);
             }
-            (range, topk_per_user)
+            (range, topk_per_row)
         }).collect();
 
         // TODO Sort the ranges, reserve on first and append the remaining vecs
-        let mut topk_per_user: Vec<TopK> = vec![TopK::new(BinaryHeap::new()); num_users];
+        let mut topk_per_row: Vec<TopK> = vec![TopK::new(BinaryHeap::new()); num_rows];
         for (range, topk_partition) in topk_partitioned.into_iter() {
             for (index, topk) in range.into_iter().zip(topk_partition.into_iter()) {
-                topk_per_user[*index] = topk;
+                topk_per_row[*index] = topk;
             }
         }
 
         Self {
-            user_representations,
-            user_representations_transposed,
-            topk_per_user,
+            representations,
+            representations_transposed,
+            topk_per_row,
             k,
             norms,
             similarity
@@ -99,120 +100,120 @@ impl<S: Similarity + std::marker::Sync> UserSimilarityIndex<S> {
     }
 
 
-    pub fn forget(&mut self, user: usize, item: usize) {
+    pub fn forget(&mut self, row: usize, column: usize) {
 
-        let (num_users, _) = self.user_representations.shape();
+        let (num_rows, _) = self.representations.shape();
 
-        let old_value = self.user_representations.get(user, item).unwrap().clone();
+        let old_value = self.representations.get(row, column).unwrap().clone();
 
         //println!("-Updating user representations");
-        zero_out_entry(&mut self.user_representations, user, item);
-        assert_eq!(*self.user_representations.get(user, item).unwrap(), 0.0_f64);
+        zero_out_entry(&mut self.representations, row, column);
+        assert_eq!(*self.representations.get(row, column).unwrap(), 0.0_f64);
 
-        zero_out_entry(&mut self.user_representations_transposed, item, user);
-        assert_eq!(*self.user_representations_transposed.get(item, user).unwrap(), 0.0_f64);
+        zero_out_entry(&mut self.representations_transposed, column, row);
+        assert_eq!(*self.representations_transposed.get(column, row).unwrap(), 0.0_f64);
 
         //println!("-Updating norms");
-        let old_l2norm = self.norms[user];
-        self.norms[user] = ((old_l2norm * old_l2norm) - (old_value * old_value)).sqrt();
+        let old_l2norm = self.norms[row];
+        self.norms[row] = ((old_l2norm * old_l2norm) - (old_value * old_value)).sqrt();
 
         //println!("-Computing new similarities for user {}", user);
-        let data = self.user_representations.data();
-        let indices = self.user_representations.indices();
-        let indptr = self.user_representations.indptr();
-        let data_t = self.user_representations_transposed.data();
-        let indices_t = self.user_representations_transposed.indices();
-        let indptr_t = self.user_representations_transposed.indptr();
+        let data = self.representations.data();
+        let indices = self.representations.indices();
+        let indptr = self.representations.indptr();
+        let data_t = self.representations_transposed.data();
+        let indices_t = self.representations_transposed.indices();
+        let indptr_t = self.representations_transposed.indptr();
 
-        let mut accumulator = RowAccumulator::new(num_users.clone());
+        let mut accumulator = RowAccumulator::new(num_rows.clone());
 
-        for item_index in indptr.outer_inds_sz(user) {
-            let value = data[item_index];
-            for user_index in indptr_t.outer_inds_sz(indices[item_index]) {
-                accumulator.add_to(indices_t[user_index], data_t[user_index] * value.clone());
+        for column_index in indptr.outer_inds_sz(row) {
+            let value = data[column_index];
+            for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
+                accumulator.add_to(indices_t[other_row], data_t[other_row] * value.clone());
             }
         }
 
 
-        let updated_similarities = accumulator.collect_all(user, &self.norms);
+        let updated_similarities = accumulator.collect_all(row, &self.similarity, &self.norms);
 
-        let mut users_to_fully_recompute = Vec::new();
+        let mut rows_to_fully_recompute = Vec::new();
 
-        let changes: Vec<(usize, TopkUpdate)> = updated_similarities.par_iter().map(|similar_user| {
+        let changes: Vec<(usize, TopkUpdate)> = updated_similarities.par_iter().map(|similar| {
 
-            assert_ne!(similar_user.user, user);
+            assert_ne!(similar.row, row);
 
-            let other_user = similar_user.user;
-            let similarity = similar_user.similarity;
+            let other_row = similar.row;
+            let similarity = similar.similarity;
 
-            let other_topk = &self.topk_per_user[other_user];
-            let already_in_topk = other_topk.contains(user);
+            let other_topk = &self.topk_per_row[other_row];
+            let already_in_topk = other_topk.contains(row);
 
-            let similar_user_to_update = SimilarUser::new(user, similarity);
+            let similar_row_to_update = SimilarRow::new(row, similarity);
 
             if !already_in_topk {
                 return if similarity != 0.0 {
                     assert_eq!(other_topk.len(), self.k);
-                    (other_user, other_topk.offer_non_existing_entry(similar_user_to_update))
+                    (other_row, other_topk.offer_non_existing_entry(similar_row_to_update))
                 } else {
-                    (other_user, NoChange)
+                    (other_row, NoChange)
                 }
             } else {
                 if other_topk.len() < self.k {
 
-                    if similar_user_to_update.similarity == 0.0 {
-                        return (other_user, other_topk.remove_existing_entry(
-                            similar_user_to_update.user, self.k));
+                    if similar_row_to_update.similarity == 0.0 {
+                        return (other_row, other_topk.remove_existing_entry(
+                            similar_row_to_update.row, self.k));
                     } else {
-                        return (other_user,
-                                other_topk.update_existing_entry(similar_user_to_update, self.k));
+                        return (other_row,
+                                other_topk.update_existing_entry(similar_row_to_update, self.k));
                     }
 
                 } else {
 
-                    if similar_user_to_update.similarity == 0.0 {
-                        return (other_user, NeedsFullRecomputation);
+                    if similar_row_to_update.similarity == 0.0 {
+                        return (other_row, NeedsFullRecomputation);
                     } else {
-                        return (other_user, other_topk.update_existing_entry(
-                            similar_user_to_update, self.k));
+                        return (other_row, other_topk.update_existing_entry(
+                            similar_row_to_update, self.k));
                     };
                 }
             }
         }).collect();
 
-        let mut count_nochange = 0;
-        let mut count_update = 0;
-        for (other_user, change) in changes {
+        let mut _count_nochange = 0;
+        let mut _count_update = 0;
+        for (other_row, change) in changes {
             match change {
-                NeedsFullRecomputation => users_to_fully_recompute.push(other_user),
+                NeedsFullRecomputation => rows_to_fully_recompute.push(other_row),
                 Update(new_topk) => {
-                    count_update += 1;
-                    self.topk_per_user[other_user] = new_topk;
+                    _count_update += 1;
+                    self.topk_per_row[other_row] = new_topk;
                 },
-                NoChange => count_nochange += 1,
+                NoChange => _count_nochange += 1,
             }
         }
 
-        let topk = accumulator.topk_and_clear(user, self.k, &self.similarity, &self.norms);
-        self.topk_per_user[user] = topk;
+        let topk = accumulator.topk_and_clear(row, self.k, &self.similarity, &self.norms);
+        self.topk_per_row[row] = topk;
 
         // TODO is it worth to parallelize this?
-        let count_recompute = users_to_fully_recompute.len();
-        for user_to_recompute in users_to_fully_recompute {
+        let _count_recompute = rows_to_fully_recompute.len();
+        for row_to_recompute in rows_to_fully_recompute {
 
-            for item_index in indptr.outer_inds_sz(user_to_recompute) {
-                let value = data[item_index];
-                for user_index in indptr_t.outer_inds_sz(indices[item_index]) {
-                    accumulator.add_to(indices_t[user_index], data_t[user_index] * value.clone());
+            for column_index in indptr.outer_inds_sz(row_to_recompute) {
+                let value = data[column_index];
+                for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
+                    accumulator.add_to(indices_t[other_row], data_t[other_row] * value.clone());
                 }
             }
 
-            let topk = accumulator.topk_and_clear(user_to_recompute, self.k, &self.similarity,
+            let topk = accumulator.topk_and_clear(row_to_recompute, self.k, &self.similarity,
                                                   &self.norms);
 
-            self.topk_per_user[user_to_recompute] = topk;
+            self.topk_per_row[row_to_recompute] = topk;
         }
-        println!("NoChange={}/Update={}/Recompute={}", count_nochange, count_update, count_recompute);
+        //println!("NoChange={}/Update={}/Recompute={}", count_nochange, count_update, count_recompute);
     }
 }
 
@@ -221,7 +222,7 @@ mod tests {
     use super::*;
     use sprs::TriMat;
     use crate::similarity::COSINE;
-    use crate::user_similarity_index::UserSimilarityIndex;
+    use crate::sparse_topk_index::SparseTopKIndex;
 
     #[test]
     fn test_mini_example() {
@@ -267,7 +268,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let index = UserSimilarityIndex::new(user_representations, 2, COSINE);
+        let index = SparseTopKIndex::new(user_representations, 2, COSINE);
 
         let mut n0: Vec<_> = index.neighbors(0).collect();
         n0.sort();
@@ -336,7 +337,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let mut index = UserSimilarityIndex::new(user_representations, 2, COSINE);
+        let mut index = SparseTopKIndex::new(user_representations, 2, COSINE);
 
         index.forget(0, 1);
 
@@ -406,7 +407,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let mut index = UserSimilarityIndex::new(user_representations, 2, COSINE);
+        let mut index = SparseTopKIndex::new(user_representations, 2, COSINE);
 
         index.forget(0, 1);
         index.forget(1, 3);
@@ -432,8 +433,8 @@ mod tests {
         dbg!(n3);
     }
 
-    fn check_entry(entry: &SimilarUser, expected_user: usize, expected_similarity: f64) {
-        assert_eq!(entry.user, expected_user);
+    fn check_entry(entry: &SimilarRow, expected_user: usize, expected_similarity: f64) {
+        assert_eq!(entry.row, expected_user);
         assert!((entry.similarity - expected_similarity).abs() < 0.0001);
     }
 }

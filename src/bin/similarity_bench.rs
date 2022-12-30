@@ -6,7 +6,7 @@ use ndarray_npy::NpzReader;
 use std::fs::File;
 use std::time::Instant;
 use sprs::CsMat;
-use caboose_index::user_similarity_index::UserSimilarityIndex;
+use caboose_index::sparse_topk_index::SparseTopKIndex;
 use caboose_index::similarity::COSINE;
 
 fn main() {
@@ -37,7 +37,7 @@ fn similarity_bench(
     for _ in 0..num_repetitions {
         let representations_copy = representations.clone();
         let start = Instant::now();
-        let index = UserSimilarityIndex::new(representations_copy, k, COSINE);
+        let index = SparseTopKIndex::new(representations_copy, k, COSINE);
         let end = Instant::now();
         let duration = (end - start).as_millis();
         println!("{:?}: {:?}, {:?}", matrix_file, duration, index.neighbors(0).len());

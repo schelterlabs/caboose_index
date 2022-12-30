@@ -1,11 +1,11 @@
 use std::collections::BinaryHeap;
-use crate::similar_user::SimilarUser;
+use crate::similar_row::SimilarRow;
 use std::collections::binary_heap::Iter;
 use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
 
 #[derive(Clone)]
 pub(crate) struct TopK {
-    heap: BinaryHeap<SimilarUser>,
+    heap: BinaryHeap<SimilarRow>,
 }
 
 pub(crate) enum TopkUpdate {
@@ -16,7 +16,7 @@ pub(crate) enum TopkUpdate {
 
 impl TopK {
 
-    pub(crate) fn new(heap: BinaryHeap<SimilarUser>) -> Self {
+    pub(crate) fn new(heap: BinaryHeap<SimilarRow>) -> Self {
         Self { heap }
     }
 
@@ -24,21 +24,21 @@ impl TopK {
         self.heap.len()
     }
 
-    pub(crate) fn iter(&self) -> Iter<SimilarUser> {
+    pub(crate) fn iter(&self) -> Iter<SimilarRow> {
         self.heap.iter()
     }
 
     // TODO there must be a better way
-    pub(crate) fn contains(&self, user: usize) -> bool {
+    pub(crate) fn contains(&self, row: usize) -> bool {
         for entry in self.heap.iter() {
-            if entry.user == user {
+            if entry.row == row {
                 return true;
             }
         }
         false
     }
 
-    pub(crate) fn offer_non_existing_entry(&self, offered_entry: SimilarUser) -> TopkUpdate {
+    pub(crate) fn offer_non_existing_entry(&self, offered_entry: SimilarRow) -> TopkUpdate {
         if offered_entry < *self.heap.peek().unwrap() {
             let mut updated_heap = self.heap.clone();
             {
@@ -53,13 +53,13 @@ impl TopK {
 
     pub(crate) fn remove_existing_entry(
         &self,
-        user: usize,
+        row: usize,
         k: usize
     ) -> TopkUpdate {
         let mut new_heap = BinaryHeap::with_capacity(k);
 
         for existing_entry in self.heap.iter() {
-            if existing_entry.user != user {
+            if existing_entry.row != row {
                 new_heap.push(existing_entry.clone());
             }
         }
@@ -69,7 +69,7 @@ impl TopK {
 
     pub(crate) fn update_existing_entry(
         &self,
-        update: SimilarUser,
+        update: SimilarRow,
         k: usize
     ) -> TopkUpdate {
 
@@ -77,7 +77,7 @@ impl TopK {
 
         if self.heap.len() == k {
             let old_top = self.heap.peek().unwrap();
-            if old_top.user == update.user && old_top.similarity > update.similarity {
+            if old_top.row == update.row && old_top.similarity > update.similarity {
                 return NeedsFullRecomputation
             }
         }
@@ -85,7 +85,7 @@ impl TopK {
         let mut new_heap = BinaryHeap::with_capacity(k);
 
         for existing_entry in self.heap.iter() {
-            if existing_entry.user != update.user {
+            if existing_entry.row != update.row {
                 new_heap.push(existing_entry.clone());
             }
         }
@@ -106,13 +106,13 @@ mod tests {
     fn test_update_not_smallest() {
         let k = 3;
         let mut original_entries = BinaryHeap::with_capacity(k);
-        original_entries.push(SimilarUser::new(1, 1.0));
-        original_entries.push(SimilarUser::new(2, 0.8));
-        original_entries.push(SimilarUser::new(3, 0.5));
+        original_entries.push(SimilarRow::new(1, 1.0));
+        original_entries.push(SimilarRow::new(2, 0.8));
+        original_entries.push(SimilarRow::new(3, 0.5));
 
         let topk = TopK::new(original_entries);
 
-        let update = topk.update_existing_entry(SimilarUser::new(2, 0.7), k);
+        let update = topk.update_existing_entry(SimilarRow::new(2, 0.7), k);
 
         assert!(matches!(update, Update(_)));
 
@@ -130,13 +130,13 @@ mod tests {
 
         let k = 3;
         let mut original_entries = BinaryHeap::with_capacity(k);
-        original_entries.push(SimilarUser::new(1, 1.0));
-        original_entries.push(SimilarUser::new(2, 0.8));
-        original_entries.push(SimilarUser::new(3, 0.5));
+        original_entries.push(SimilarRow::new(1, 1.0));
+        original_entries.push(SimilarRow::new(2, 0.8));
+        original_entries.push(SimilarRow::new(3, 0.5));
 
         let topk = TopK::new(original_entries);
 
-        let update = topk.update_existing_entry(SimilarUser::new(2, 1.5), k);
+        let update = topk.update_existing_entry(SimilarRow::new(2, 1.5), k);
 
         assert!(matches!(update, Update(_)));
         if let Update(new_topk) = update {
@@ -153,13 +153,13 @@ mod tests {
 
         let k = 3;
         let mut original_entries = BinaryHeap::with_capacity(k);
-        original_entries.push(SimilarUser::new(1, 1.0));
-        original_entries.push(SimilarUser::new(2, 0.8));
-        original_entries.push(SimilarUser::new(3, 0.5));
+        original_entries.push(SimilarRow::new(1, 1.0));
+        original_entries.push(SimilarRow::new(2, 0.8));
+        original_entries.push(SimilarRow::new(3, 0.5));
 
         let topk = TopK::new(original_entries);
 
-        let update = topk.update_existing_entry(SimilarUser::new(3, 0.6), k);
+        let update = topk.update_existing_entry(SimilarRow::new(3, 0.6), k);
 
         assert!(matches!(update, Update(_)));
         if let Update(new_topk) = update {
@@ -176,13 +176,13 @@ mod tests {
 
         let k = 3;
         let mut original_entries = BinaryHeap::with_capacity(k);
-        original_entries.push(SimilarUser::new(1, 1.0));
-        original_entries.push(SimilarUser::new(2, 0.8));
-        original_entries.push(SimilarUser::new(3, 0.5));
+        original_entries.push(SimilarRow::new(1, 1.0));
+        original_entries.push(SimilarRow::new(2, 0.8));
+        original_entries.push(SimilarRow::new(3, 0.5));
 
         let topk = TopK::new(original_entries);
 
-        let update = topk.update_existing_entry(SimilarUser::new(3, 0.4), k);
+        let update = topk.update_existing_entry(SimilarRow::new(3, 0.4), k);
         assert!(matches!(update, NeedsFullRecomputation));
     }
 
@@ -191,12 +191,12 @@ mod tests {
 
         let k = 3;
         let mut original_entries = BinaryHeap::with_capacity(k);
-        original_entries.push(SimilarUser::new(1, 1.0));
-        original_entries.push(SimilarUser::new(3, 0.5));
+        original_entries.push(SimilarRow::new(1, 1.0));
+        original_entries.push(SimilarRow::new(3, 0.5));
 
         let topk = TopK::new(original_entries);
 
-        let update = topk.update_existing_entry(SimilarUser::new(3, 0.4), k);
+        let update = topk.update_existing_entry(SimilarRow::new(3, 0.4), k);
 
         assert!(matches!(update, Update(_)));
         if let Update(new_topk) = update {
@@ -207,8 +207,8 @@ mod tests {
         }
     }
 
-    fn check_entry(entry: &SimilarUser, expected_user: usize, expected_similarity: f64) {
-        assert_eq!(entry.user, expected_user);
+    fn check_entry(entry: &SimilarRow, expected_user: usize, expected_similarity: f64) {
+        assert_eq!(entry.row, expected_user);
         assert!((entry.similarity - expected_similarity).abs() < 0.0001);
     }
 }
