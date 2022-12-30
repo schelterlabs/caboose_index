@@ -2,6 +2,7 @@ use std::collections::BinaryHeap;
 use crate::topk::TopK;
 
 use crate::similar_user::SimilarUser;
+use crate::similarity::Similarity;
 
 pub(crate) struct RowAccumulator {
     sums: Vec<f64>,
@@ -58,11 +59,12 @@ impl RowAccumulator {
         similar_users
     }
 
-    pub(crate) fn topk_and_clear(
+    pub(crate) fn topk_and_clear<S: Similarity>(
         &mut self,
         user: usize,
         k: usize,
-        l2norms: &Vec<f64>
+        similarity: &S,
+        norms: &Vec<f64>
     ) -> TopK {
 
         let mut topk_similar_users: BinaryHeap<SimilarUser> = BinaryHeap::with_capacity(k);
@@ -72,8 +74,9 @@ impl RowAccumulator {
 
             // We can have zero dot products after deletions
             if other_user != user && self.sums[other_user] != NONE {
-                let similarity = self.sums[other_user] / (l2norms[user] * l2norms[other_user]);
-                let scored_user = SimilarUser::new(other_user, similarity);
+                let sim = similarity.from_norms(self.sums[other_user],
+                    norms[user], norms[other_user]);
+                let scored_user = SimilarUser::new(other_user, sim);
 
                 if topk_similar_users.len() < k {
                     topk_similar_users.push(scored_user);

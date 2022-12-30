@@ -9,25 +9,27 @@ use sprs::CsMat;
 
 use num_cpus::get_physical;
 use rayon::prelude::*;
+use crate::similarity::Similarity;
 use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
 
 use crate::utils::zero_out_entry;
 
-pub struct UserSimilarityIndex {
+pub struct UserSimilarityIndex<S: Similarity> {
     user_representations:  CsMat<f64>,
     user_representations_transposed: CsMat<f64>,
     topk_per_user: Vec<TopK>,
     k: usize,
-    l2norms: Vec<f64>,
+    similarity: S,
+    norms: Vec<f64>,
 }
 
-impl UserSimilarityIndex {
+impl<S: Similarity + std::marker::Sync> UserSimilarityIndex<S> {
 
     pub fn neighbors(&self, user: usize) -> Iter<SimilarUser> {
         self.topk_per_user[user].iter()
     }
 
-    pub fn new(user_representations: CsMat<f64>, k: usize) -> Self {
+    pub fn new(user_representations: CsMat<f64>, k: usize, similarity: S) -> Self {
         let (num_users, _) = user_representations.shape();
 
         //println!("--Creating transposed copy...");
@@ -44,14 +46,14 @@ impl UserSimilarityIndex {
 
         //println!("--Computing l2 norms...");
         //TODO is it worth to parallelize this?
-        let l2norms: Vec<f64> = (0..num_users)
+        let norms: Vec<f64> = (0..num_users)
             .map(|user| {
-                let mut sum_of_squares: f64 = 0.0;
+                let mut norm_accumulator: f64 = 0.0;
                 for item_index in indptr.outer_inds_sz(user) {
                     let value = data[item_index];
-                    sum_of_squares += value * value;
+                    norm_accumulator += similarity.accumulate_norm(value);
                 }
-                sum_of_squares.sqrt()
+                similarity.finalize_norm(norm_accumulator)
             })
             .collect();
 
@@ -72,7 +74,7 @@ impl UserSimilarityIndex {
                     }
                 }
 
-                let topk = accumulator.topk_and_clear(*user, k, &l2norms);
+                let topk = accumulator.topk_and_clear(*user, k, &similarity, &norms);
                 topk_per_user.push(topk);
             }
             (range, topk_per_user)
@@ -91,7 +93,8 @@ impl UserSimilarityIndex {
             user_representations_transposed,
             topk_per_user,
             k,
-            l2norms,
+            norms,
+            similarity
         }
     }
 
@@ -110,8 +113,8 @@ impl UserSimilarityIndex {
         assert_eq!(*self.user_representations_transposed.get(item, user).unwrap(), 0.0_f64);
 
         //println!("-Updating norms");
-        let old_l2norm = self.l2norms[user];
-        self.l2norms[user] = ((old_l2norm * old_l2norm) - (old_value * old_value)).sqrt();
+        let old_l2norm = self.norms[user];
+        self.norms[user] = ((old_l2norm * old_l2norm) - (old_value * old_value)).sqrt();
 
         //println!("-Computing new similarities for user {}", user);
         let data = self.user_representations.data();
@@ -131,7 +134,7 @@ impl UserSimilarityIndex {
         }
 
 
-        let updated_similarities = accumulator.collect_all(user, &self.l2norms);
+        let updated_similarities = accumulator.collect_all(user, &self.norms);
 
         let mut users_to_fully_recompute = Vec::new();
 
@@ -190,7 +193,7 @@ impl UserSimilarityIndex {
             }
         }
 
-        let topk = accumulator.topk_and_clear(user, self.k, &self.l2norms);
+        let topk = accumulator.topk_and_clear(user, self.k, &self.similarity, &self.norms);
         self.topk_per_user[user] = topk;
 
         // TODO is it worth to parallelize this?
@@ -204,7 +207,8 @@ impl UserSimilarityIndex {
                 }
             }
 
-            let topk = accumulator.topk_and_clear(user_to_recompute, self.k, &self.l2norms);
+            let topk = accumulator.topk_and_clear(user_to_recompute, self.k, &self.similarity,
+                                                  &self.norms);
 
             self.topk_per_user[user_to_recompute] = topk;
         }
@@ -216,12 +220,7 @@ impl UserSimilarityIndex {
 mod tests {
     use super::*;
     use sprs::TriMat;
-
-    use numpy::ndarray::Array1;
-    use ndarray_npy::NpzReader;
-    use std::fs::File;
-    use std::time::Instant;
-    use sprs::CsMat;
+    use crate::similarity::COSINE;
     use crate::user_similarity_index::UserSimilarityIndex;
 
     #[test]
@@ -268,7 +267,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let index = UserSimilarityIndex::new(user_representations, 2);
+        let index = UserSimilarityIndex::new(user_representations, 2, COSINE);
 
         let mut n0: Vec<_> = index.neighbors(0).collect();
         n0.sort();
@@ -337,7 +336,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let mut index = UserSimilarityIndex::new(user_representations, 2);
+        let mut index = UserSimilarityIndex::new(user_representations, 2, COSINE);
 
         index.forget(0, 1);
 
@@ -407,7 +406,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let mut index = UserSimilarityIndex::new(user_representations, 2);
+        let mut index = UserSimilarityIndex::new(user_representations, 2, COSINE);
 
         index.forget(0, 1);
         index.forget(1, 3);
