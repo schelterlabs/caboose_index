@@ -12,8 +12,10 @@ use caboose_index::sparse_topk_index::SparseTopKIndex;
 use caboose_index::similarity::COSINE;
 
 fn main() {
-    forget_bench("tifu-instacart.npz", 30000, 28438, 900, 500);
-    forget_bench("pernir-instacart.npz", 30000, 43936, 300, 500);
+    for _ in 0..3 {
+        forget_bench("tifu-instacart.npz", 30000, 28438, 900, 500);
+        forget_bench("pernir-instacart.npz", 30000, 43936, 300, 500);
+    }
 }
 
 fn forget_bench(
