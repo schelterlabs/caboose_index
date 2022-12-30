@@ -134,7 +134,6 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             }
         }
 
-
         let updated_similarities = accumulator.collect_all(row, &self.similarity, &self.norms);
 
         let mut rows_to_fully_recompute = Vec::new();
@@ -149,48 +148,43 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             let other_topk = &self.topk_per_row[other_row];
             let already_in_topk = other_topk.contains(row);
 
-            let similar_row_to_update = SimilarRow::new(row, similarity);
+            let update = SimilarRow::new(row, similarity);
 
-            if !already_in_topk {
-                return if similarity != 0.0 {
+            let change = if !already_in_topk {
+                if similarity != 0.0 {
                     assert_eq!(other_topk.len(), self.k);
-                    (other_row, other_topk.offer_non_existing_entry(similar_row_to_update))
+                    other_topk.offer_non_existing_entry(update)
                 } else {
-                    (other_row, NoChange)
+                    NoChange
                 }
             } else {
                 if other_topk.len() < self.k {
-
-                    if similar_row_to_update.similarity == 0.0 {
-                        return (other_row, other_topk.remove_existing_entry(
-                            similar_row_to_update.row, self.k));
+                    if update.similarity == 0.0 {
+                        other_topk.remove_existing_entry(update.row, self.k)
                     } else {
-                        return (other_row,
-                                other_topk.update_existing_entry(similar_row_to_update, self.k));
+                        other_topk.update_existing_entry(update, self.k)
                     }
-
                 } else {
-
-                    if similar_row_to_update.similarity == 0.0 {
-                        return (other_row, NeedsFullRecomputation);
+                    if update.similarity == 0.0 {
+                        NeedsFullRecomputation
                     } else {
-                        return (other_row, other_topk.update_existing_entry(
-                            similar_row_to_update, self.k));
-                    };
+                        other_topk.update_existing_entry(update, self.k)
+                    }
                 }
-            }
+            };
+            (other_row, change)
         }).collect();
 
-        let mut _count_nochange = 0;
-        let mut _count_update = 0;
+        //let mut _count_nochange = 0;
+        //let mut _count_update = 0;
         for (other_row, change) in changes {
             match change {
                 NeedsFullRecomputation => rows_to_fully_recompute.push(other_row),
                 Update(new_topk) => {
-                    _count_update += 1;
+                    //_count_update += 1;
                     self.topk_per_row[other_row] = new_topk;
                 },
-                NoChange => _count_nochange += 1,
+                NoChange => (),//_count_nochange += 1,
             }
         }
 
@@ -198,7 +192,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         self.topk_per_row[row] = topk;
 
         // TODO is it worth to parallelize this?
-        let _count_recompute = rows_to_fully_recompute.len();
+        //let _count_recompute = rows_to_fully_recompute.len();
         for row_to_recompute in rows_to_fully_recompute {
 
             for column_index in indptr.outer_inds_sz(row_to_recompute) {
