@@ -6,7 +6,7 @@ use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
 #[derive(Clone)]
 pub(crate) struct TopK {
     heap: BinaryHeap<SimilarRow>,
-    keys: Vec<usize>,
+    sorted_keys: Vec<usize>,
 }
 
 pub(crate) enum TopkUpdate {
@@ -22,7 +22,7 @@ impl TopK {
         let mut keys: Vec<usize> = heap.iter().map(|entry| entry.row).collect();
         keys.sort();
 
-        Self { heap, keys }
+        Self { heap, sorted_keys: keys }
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -33,18 +33,11 @@ impl TopK {
         self.heap.iter()
     }
 
-    // TODO there must be a better way
     pub(crate) fn contains(&self, row: usize) -> bool {
-        match self.keys.binary_search(&row) {
+        match self.sorted_keys.binary_search(&row) {
             Ok(_) => true,
             _ => false,
         }
-        /*for entry in self.heap.iter() {
-            if entry.row == row {
-                return true;
-            }
-        }
-        false*/
     }
 
     pub(crate) fn offer_non_existing_entry(&self, offered_entry: SimilarRow) -> TopkUpdate {
@@ -99,9 +92,7 @@ impl TopK {
             }
         }
 
-        if update.similarity != 0.0 {
-            new_heap.push(update);
-        }
+        new_heap.push(update);
 
         Update(TopK::new(new_heap))
     }
