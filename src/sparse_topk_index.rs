@@ -7,6 +7,7 @@ use std::collections::binary_heap::Iter;
 use std::collections::BinaryHeap;
 use sprs::CsMat;
 use std::marker::Sync;
+use std::time::Instant;
 
 use num_cpus::get_physical;
 use rayon::prelude::*;
@@ -58,12 +59,15 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             })
             .collect();
 
-        let num_cores = get_physical();
+        let _num_cores = get_physical();
         let row_range = (0..num_rows).collect::<Vec<usize>>();
 
-        let topk_partitioned: Vec<_> = row_range.par_chunks(num_cores).map(|range| {
+        let chunk_size = 128; // Magic number, seems to work well
+
+        let topk_partitioned: Vec<_> = row_range.par_chunks(chunk_size).map(|range| {
             let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
             let mut accumulator = RowAccumulator::new(num_rows.clone());
+
             for row in range {
                 for column_index in indptr.outer_inds_sz(*row) {
                     let value = data[column_index];
@@ -78,6 +82,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
                 let topk = accumulator.topk_and_clear(*row, k, &similarity, &norms);
                 topk_per_row.push(topk);
             }
+
             (range, topk_per_row)
         }).collect();
 
@@ -125,6 +130,8 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         let indices_t = self.representations_transposed.indices();
         let indptr_t = self.representations_transposed.indptr();
 
+        /*
+        let start_time = Instant::now();
         let mut accumulator = RowAccumulator::new(num_rows.clone());
 
         for column_index in indptr.outer_inds_sz(row) {
@@ -134,11 +141,47 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             }
         }
 
-        let updated_similarities = accumulator.collect_all(row, &self.similarity, &self.norms);
+        let _updated_similarities = accumulator.collect_all(row, &self.similarity, &self.norms);
+        let similarity_duration = (Instant::now() - start_time).as_millis();*/
 
+        //---
+        let start_time = Instant::now();
+
+        let column_indices: Vec<_> = indptr.outer_inds_sz(row).collect();
+        let mut chunk_size = column_indices.len() / 4; // TODO set to num physical cores
+        if chunk_size == 0 {
+            chunk_size = 1;
+        }
+        let accs: Vec<_> = column_indices.par_chunks(chunk_size).map(|column_range| {
+            let mut accumulator = RowAccumulator::new(num_rows.clone());
+
+            for column_index in column_range {
+                let value = data[*column_index];
+                for other_row in indptr_t.outer_inds_sz(indices[*column_index]) {
+                    accumulator.add_to(indices_t[other_row], data_t[other_row] * value.clone());
+                }
+            }
+
+            accumulator
+        }).collect();
+
+        let (parallely_updated_similarities, topk) = RowAccumulator::merge_and_collect_all(
+            row,
+            &self.similarity,
+            self.k,
+            &self.norms,
+            accs);
+
+        let parallel_similarity_duration = (Instant::now() - start_time).as_millis();
+
+        //println!("{} / {}", parallel_similarity_duration, parallely_updated_similarities.len());
+
+
+        let start_time = Instant::now();
         let mut rows_to_fully_recompute = Vec::new();
 
-        let changes: Vec<(usize, TopkUpdate)> = updated_similarities.par_iter().map(|similar| {
+        let changes: Vec<(usize, TopkUpdate)> = parallely_updated_similarities.par_iter().map(|similar| {
+        //let changes: Vec<(usize, TopkUpdate)> = updated_similarities.par_iter().map(|similar| {
 
             assert_ne!(similar.row, row);
 
@@ -174,25 +217,35 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             };
             (other_row, change)
         }).collect();
+        let change_duration = (Instant::now() - start_time).as_millis();
 
-        //let mut _count_nochange = 0;
-        //let mut _count_update = 0;
+        let start_time = Instant::now();
+        let mut count_nochange = 0;
+        let mut count_update = 0;
+        let mut count_recompute = 0;
         for (other_row, change) in changes {
             match change {
-                NeedsFullRecomputation => rows_to_fully_recompute.push(other_row),
+                NeedsFullRecomputation => {
+                    rows_to_fully_recompute.push(other_row);
+                    count_recompute += 1;
+                },
                 Update(new_topk) => {
-                    //_count_update += 1;
+                    count_update += 1;
                     self.topk_per_row[other_row] = new_topk;
                 },
-                NoChange => (),//_count_nochange += 1,
+                NoChange => {
+                    count_nochange += 1;
+                }
             }
         }
 
-        let topk = accumulator.topk_and_clear(row, self.k, &self.similarity, &self.norms);
+        //let topk = accumulator.topk_and_clear(row, self.k, &self.similarity, &self.norms);
         self.topk_per_row[row] = topk;
+        let change_apply_duration = (Instant::now() - start_time).as_millis();
 
+        let mut accumulator = RowAccumulator::new(num_rows.clone());
+        let start_time = Instant::now();
         // TODO is it worth to parallelize this?
-        //let _count_recompute = rows_to_fully_recompute.len();
         for row_to_recompute in rows_to_fully_recompute {
 
             for column_index in indptr.outer_inds_sz(row_to_recompute) {
@@ -207,7 +260,19 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
 
             self.topk_per_row[row_to_recompute] = topk;
         }
-        //println!("NoChange={}/Update={}/Recompute={}", count_nochange, count_update, count_recompute);
+        let recompute_duration = (Instant::now() - start_time).as_millis();
+
+        /*println!("\tentries: {}=({}/{}/{}), duration: ({}/{}/{}/{})",
+            count_nochange + count_update + count_recompute,
+            count_nochange,
+            count_update,
+            count_recompute,
+            //similarity_duration,
+            parallel_similarity_duration,
+            change_duration,
+            change_apply_duration,
+            recompute_duration,
+        );*/
     }
 }
 

@@ -10,8 +10,11 @@ use caboose_index::sparse_topk_index::SparseTopKIndex;
 use caboose_index::similarity::COSINE;
 
 fn main() {
+    //similarity_bench("yahoosongs-raw.npz", 1000991, 624962, 50, 5);
+    similarity_bench("ciaodvd-raw.npz", 21020, 71634, 50, 5);
     similarity_bench("tifu-instacart.npz", 30000, 28438, 900, 5);
     similarity_bench("pernir-instacart.npz", 30000, 43936, 300, 5);
+    similarity_bench("movielens10m-raw.npz", 69879, 10678, 50, 5);
 }
 
 fn similarity_bench(

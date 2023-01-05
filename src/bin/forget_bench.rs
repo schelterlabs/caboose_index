@@ -12,13 +12,25 @@ use caboose_index::sparse_topk_index::SparseTopKIndex;
 use caboose_index::similarity::COSINE;
 
 fn main() {
+
+    let num_samples_to_forget = 100;
+
+    // for _ in 0..5 {
+    //     forget_bench("ciaodvd-raw.npz", 21020, 71634, 50, 500);
+    // }
+    //
     for _ in 0..5 {
-        forget_bench("tifu-instacart.npz", 30000, 28438, 900, 500);
+        forget_bench("tifu-instacart.npz", 30000, 28438, 900, num_samples_to_forget);
     }
 
     for _ in 0..5 {
-        forget_bench("pernir-instacart.npz", 30000, 43936, 300, 500);
+        forget_bench("pernir-instacart.npz", 30000, 43936, 300, num_samples_to_forget);
     }
+
+    for _ in 0..5 {
+        forget_bench("movielens10m-raw.npz", 69879, 10678, 50, num_samples_to_forget);
+    }
+
 }
 
 fn forget_bench(

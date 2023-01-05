@@ -33,6 +33,53 @@ impl RowAccumulator {
         }
     }
 
+    pub(crate) fn merge_and_collect_all<S: Similarity>(
+        row: usize,
+        similarity: &S,
+        k: usize,
+        norms: &Vec<f64>,
+        mut accumulators: Vec<RowAccumulator>
+    ) -> (Vec<SimilarRow>, TopK) {
+
+        let last = accumulators.pop().unwrap();
+
+        let mut sums = last.sums;
+        let mut non_zero_indices = vec![0; sums.len()];
+        let mut topk_similar_rows: BinaryHeap<SimilarRow> = BinaryHeap::with_capacity(k);
+
+        for other in accumulators {
+            let mut intermediate_head = other.head;
+            while intermediate_head != NO_HEAD {
+                let other_row = intermediate_head as usize;
+                sums[other_row] += other.sums[other_row];
+                non_zero_indices[other_row] = 1;
+                intermediate_head = other.non_zeros[other_row];
+            }
+        }
+
+        let mut similar_users = Vec::new();
+
+        for other_row in 0..sums.len() {
+            if non_zero_indices[other_row] == 1 && other_row != row {
+                let sim = similarity.from_norms(sums[other_row], norms[row], norms[other_row]);
+                let scored_row = SimilarRow::new(other_row, sim);
+                similar_users.push(scored_row);
+
+                let scored_row_clone = SimilarRow::new(other_row, sim);
+                if topk_similar_rows.len() < k {
+                    topk_similar_rows.push(scored_row_clone);
+                } else {
+                    let mut top = topk_similar_rows.peek_mut().unwrap();
+                    if scored_row_clone < *top {
+                        *top = scored_row_clone;
+                    }
+                }
+            }
+        }
+
+        (similar_users, TopK::new(topk_similar_rows))
+    }
+
     pub(crate) fn collect_all<S: Similarity>(
         &self,
         row: usize,
