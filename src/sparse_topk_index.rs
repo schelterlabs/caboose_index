@@ -10,6 +10,7 @@ use std::marker::Sync;
 use std::time::Instant;
 
 use num_cpus::get_physical;
+use rayon::slice::Chunks;
 use rayon::prelude::*;
 use crate::similarity::Similarity;
 use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
@@ -31,14 +32,16 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         self.topk_per_row[row].iter()
     }
 
-    pub fn new(representations: CsMat<f64>, k: usize, similarity: S) -> Self {
-        let (num_rows, _) = representations.shape();
-
-        //println!("--Creating transposed copy...");
-        let mut representations_transposed: CsMat<f64> = representations.to_owned();
-        representations_transposed.transpose_mut();
-        representations_transposed = representations_transposed.to_csr();
-
+    fn parallel_topk(
+        row_ranges: Chunks<usize>,
+        representations: &CsMat<f64>,
+        representations_transposed: &CsMat<f64>,
+        num_rows: usize,
+        k: usize,
+        norms: &Vec<f64>,
+        similarity: &S,
+        topk_per_row: &mut Vec<TopK>,
+    ) {
         let data = representations.data();
         let indices = representations.indices();
         let indptr = representations.indptr();
@@ -46,25 +49,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         let indices_t = representations_transposed.indices();
         let indptr_t = representations_transposed.indptr();
 
-        //println!("--Computing l2 norms...");
-        //TODO is it worth to parallelize this?
-        let norms: Vec<f64> = (0..num_rows)
-            .map(|row| {
-                let mut norm_accumulator: f64 = 0.0;
-                for column_index in indptr.outer_inds_sz(row) {
-                    let value = data[column_index];
-                    norm_accumulator += similarity.accumulate_norm(value);
-                }
-                similarity.finalize_norm(norm_accumulator)
-            })
-            .collect();
-
-        let _num_cores = get_physical();
-        let row_range = (0..num_rows).collect::<Vec<usize>>();
-
-        let chunk_size = 128; // Magic number, seems to work well
-
-        let topk_partitioned: Vec<_> = row_range.par_chunks(chunk_size).map(|range| {
+        let topk_partitioned: Vec<_> = row_ranges.map(|range| {
             let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
@@ -79,20 +64,54 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
                     }
                 }
 
-                let topk = accumulator.topk_and_clear(*row, k, &similarity, &norms);
+                let topk = accumulator.topk_and_clear(*row, k, similarity, &norms);
                 topk_per_row.push(topk);
             }
 
             (range, topk_per_row)
         }).collect();
 
-        // TODO Sort the ranges, reserve on first and append the remaining vecs
-        let mut topk_per_row: Vec<TopK> = vec![TopK::new(BinaryHeap::new()); num_rows];
         for (range, topk_partition) in topk_partitioned.into_iter() {
             for (index, topk) in range.into_iter().zip(topk_partition.into_iter()) {
                 topk_per_row[*index] = topk;
             }
         }
+    }
+
+    pub fn new(representations: CsMat<f64>, k: usize, similarity: S) -> Self {
+        let (num_rows, _) = representations.shape();
+
+        let mut representations_transposed: CsMat<f64> = representations.to_owned();
+        representations_transposed.transpose_mut();
+        representations_transposed = representations_transposed.to_csr();
+
+        //TODO is it worth to parallelize this?
+        let norms: Vec<f64> = (0..num_rows)
+            .map(|row| {
+                let mut norm_accumulator: f64 = 0.0;
+                for column_index in representations.indptr().outer_inds_sz(row) {
+                    let value = representations.data()[column_index];
+                    norm_accumulator += similarity.accumulate_norm(value);
+                }
+                similarity.finalize_norm(norm_accumulator)
+            })
+            .collect();
+
+        let row_range = (0..num_rows).collect::<Vec<usize>>();
+        let chunk_size = 128; // Magic number, seems to work well
+        let row_ranges = row_range.par_chunks(chunk_size);
+        let mut topk_per_row: Vec<TopK> = vec![TopK::new(BinaryHeap::new()); num_rows];
+
+        SparseTopKIndex::parallel_topk(
+            row_ranges,
+            &representations,
+            &representations_transposed,
+            num_rows.clone(),
+            k,
+            &norms,
+            &similarity,
+            &mut topk_per_row
+        );
 
         Self {
             representations,
@@ -118,11 +137,9 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         zero_out_entry(&mut self.representations_transposed, column, row);
         assert_eq!(*self.representations_transposed.get(column, row).unwrap(), 0.0_f64);
 
-        //println!("-Updating norms");
-        let old_l2norm = self.norms[row];
-        self.norms[row] = ((old_l2norm * old_l2norm) - (old_value * old_value)).sqrt();
+        
+        self.norms[row] = self.similarity.update_norm(self.norms[row], old_value);
 
-        //println!("-Computing new similarities for user {}", user);
         let data = self.representations.data();
         let indices = self.representations.indices();
         let indptr = self.representations.indptr();
@@ -130,28 +147,12 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         let indices_t = self.representations_transposed.indices();
         let indptr_t = self.representations_transposed.indptr();
 
-        /*
-        let start_time = Instant::now();
-        let mut accumulator = RowAccumulator::new(num_rows.clone());
-
-        for column_index in indptr.outer_inds_sz(row) {
-            let value = data[column_index];
-            for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
-                accumulator.add_to(indices_t[other_row], data_t[other_row] * value.clone());
-            }
-        }
-
-        let _updated_similarities = accumulator.collect_all(row, &self.similarity, &self.norms);
-        let similarity_duration = (Instant::now() - start_time).as_millis();*/
-
-        //---
         let start_time = Instant::now();
 
         let column_indices: Vec<_> = indptr.outer_inds_sz(row).collect();
-        let mut chunk_size = column_indices.len() / 4; // TODO set to num physical cores
-        if chunk_size == 0 {
-            chunk_size = 1;
-        }
+        let num_cores = get_physical();
+        let chunk_size = std::cmp::max(1, column_indices.len() / num_cores);
+
         let accs: Vec<_> = column_indices.par_chunks(chunk_size).map(|column_range| {
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
@@ -165,23 +166,19 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             accumulator
         }).collect();
 
-        let (parallely_updated_similarities, topk) = RowAccumulator::merge_and_collect_all(
+        let (updated_similarities, topk) = RowAccumulator::merge_and_collect_all(
             row,
             &self.similarity,
             self.k,
             &self.norms,
             accs);
 
-        let _parallel_similarity_duration = (Instant::now() - start_time).as_millis();
-
-        //println!("{} / {}", parallel_similarity_duration, parallely_updated_similarities.len());
-
+        let parallel_similarity_duration = (Instant::now() - start_time).as_millis();
 
         let start_time = Instant::now();
         let mut rows_to_fully_recompute = Vec::new();
 
-        let changes: Vec<(usize, TopkUpdate)> = parallely_updated_similarities.par_iter().map(|similar| {
-        //let changes: Vec<(usize, TopkUpdate)> = updated_similarities.par_iter().map(|similar| {
+        let changes: Vec<(usize, TopkUpdate)> = updated_similarities.par_iter().map(|similar| {
 
             assert_ne!(similar.row, row);
 
@@ -217,7 +214,8 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             };
             (other_row, change)
         }).collect();
-        let _change_duration = (Instant::now() - start_time).as_millis();
+
+        let change_duration = (Instant::now() - start_time).as_millis();
 
         let start_time = Instant::now();
         let mut count_nochange = 0;
@@ -239,9 +237,8 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             }
         }
 
-        //let topk = accumulator.topk_and_clear(row, self.k, &self.similarity, &self.norms);
         self.topk_per_row[row] = topk;
-        let _change_apply_duration = (Instant::now() - start_time).as_millis();
+        let change_apply_duration = (Instant::now() - start_time).as_millis();
 
         let mut accumulator = RowAccumulator::new(num_rows.clone());
         let start_time = Instant::now();
@@ -260,16 +257,18 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
 
             self.topk_per_row[row_to_recompute] = topk;
         }
-        let _recompute_duration = (Instant::now() - start_time).as_millis();
+        let recompute_duration = (Instant::now() - start_time).as_millis();
 
-        let _changes = [count_nochange, count_update, count_recompute];
+        let _changes = [count_nochange + count_update + count_recompute,
+            count_nochange, count_update, count_recompute];
+        let _durations = [parallel_similarity_duration, change_duration, change_apply_duration,
+            recompute_duration];
 
         /*println!("\tentries: {}=({}/{}/{}), duration: ({}/{}/{}/{})",
             count_nochange + count_update + count_recompute,
             count_nochange,
             count_update,
             count_recompute,
-            //similarity_duration,
             parallel_similarity_duration,
             change_duration,
             change_apply_duration,

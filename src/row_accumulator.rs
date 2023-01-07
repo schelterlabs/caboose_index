@@ -82,33 +82,6 @@ impl RowAccumulator {
         (similar_users, TopK::new(topk_similar_rows))
     }
 
-/*    pub(crate) fn collect_all<S: Similarity>(
-        &self,
-        row: usize,
-        similarity: &S,
-        norms: &Vec<f64>,
-    ) -> Vec<SimilarRow> {
-
-        // TODO maybe this could be an iterator and not require allocation
-        let mut similar_users = Vec::new();
-
-        let mut intermediate_head = self.head;
-
-        while intermediate_head != NO_HEAD {
-            let other_row = intermediate_head as usize;
-
-            if other_row != row {
-                let sim = similarity.from_norms(self.sums[other_row], norms[row], norms[other_row]);
-                let scored_row = SimilarRow::new(other_row, sim);
-                similar_users.push(scored_row);
-            }
-
-            intermediate_head = self.non_zeros[other_row];
-        }
-
-        similar_users
-    }*/
-
     pub(crate) fn topk_and_clear<S: Similarity>(
         &mut self,
         row: usize,
