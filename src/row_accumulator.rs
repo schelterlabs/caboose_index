@@ -65,13 +65,15 @@ impl RowAccumulator {
                 let scored_row = SimilarRow::new(other_row, sim);
                 similar_users.push(scored_row);
 
-                let scored_row_clone = SimilarRow::new(other_row, sim);
-                if topk_similar_rows.len() < k {
-                    topk_similar_rows.push(scored_row_clone);
-                } else {
-                    let mut top = topk_similar_rows.peek_mut().unwrap();
-                    if scored_row_clone < *top {
-                        *top = scored_row_clone;
+                if sim != 0.0 {
+                    let scored_row_clone = SimilarRow::new(other_row, sim);
+                    if topk_similar_rows.len() < k {
+                        topk_similar_rows.push(scored_row_clone);
+                    } else {
+                        let mut top = topk_similar_rows.peek_mut().unwrap();
+                        if scored_row_clone < *top {
+                            *top = scored_row_clone;
+                        }
                     }
                 }
             }
@@ -80,7 +82,7 @@ impl RowAccumulator {
         (similar_users, TopK::new(topk_similar_rows))
     }
 
-    pub(crate) fn collect_all<S: Similarity>(
+/*    pub(crate) fn collect_all<S: Similarity>(
         &self,
         row: usize,
         similarity: &S,
@@ -105,7 +107,7 @@ impl RowAccumulator {
         }
 
         similar_users
-    }
+    }*/
 
     pub(crate) fn topk_and_clear<S: Similarity>(
         &mut self,

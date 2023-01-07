@@ -172,7 +172,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             &self.norms,
             accs);
 
-        let parallel_similarity_duration = (Instant::now() - start_time).as_millis();
+        let _parallel_similarity_duration = (Instant::now() - start_time).as_millis();
 
         //println!("{} / {}", parallel_similarity_duration, parallely_updated_similarities.len());
 
@@ -217,7 +217,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             };
             (other_row, change)
         }).collect();
-        let change_duration = (Instant::now() - start_time).as_millis();
+        let _change_duration = (Instant::now() - start_time).as_millis();
 
         let start_time = Instant::now();
         let mut count_nochange = 0;
@@ -241,7 +241,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
 
         //let topk = accumulator.topk_and_clear(row, self.k, &self.similarity, &self.norms);
         self.topk_per_row[row] = topk;
-        let change_apply_duration = (Instant::now() - start_time).as_millis();
+        let _change_apply_duration = (Instant::now() - start_time).as_millis();
 
         let mut accumulator = RowAccumulator::new(num_rows.clone());
         let start_time = Instant::now();
@@ -260,7 +260,9 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
 
             self.topk_per_row[row_to_recompute] = topk;
         }
-        let recompute_duration = (Instant::now() - start_time).as_millis();
+        let _recompute_duration = (Instant::now() - start_time).as_millis();
+
+        let _changes = [count_nochange, count_update, count_recompute];
 
         /*println!("\tentries: {}=({}/{}/{}), duration: ({}/{}/{}/{})",
             count_nochange + count_update + count_recompute,
