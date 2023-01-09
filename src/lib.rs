@@ -1,3 +1,4 @@
+pub mod types;
 pub mod sparse_topk_index;
 pub mod similar_row;
 pub mod topk;

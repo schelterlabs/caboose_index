@@ -1,5 +1,6 @@
 use std::collections::BinaryHeap;
 use crate::topk::TopK;
+use crate::types::{RowIndex, Score};
 
 use crate::similar_row::SimilarRow;
 use crate::similarity::Similarity;
@@ -62,11 +63,11 @@ impl RowAccumulator {
         for other_row in 0..sums.len() {
             if non_zero_indices[other_row] == 1 && other_row != row {
                 let sim = similarity.from_norms(sums[other_row], norms[row], norms[other_row]);
-                let scored_row = SimilarRow::new(other_row, sim);
+                let scored_row = SimilarRow::new(other_row as RowIndex, sim as Score);
                 similar_users.push(scored_row);
 
                 if sim != 0.0 {
-                    let scored_row_clone = SimilarRow::new(other_row, sim);
+                    let scored_row_clone = SimilarRow::new(other_row as RowIndex, sim as Score);
                     if topk_similar_rows.len() < k {
                         topk_similar_rows.push(scored_row_clone);
                     } else {
@@ -98,7 +99,7 @@ impl RowAccumulator {
             // We can have zero dot products after deletions
             if other_row != row && self.sums[other_row] != NONE {
                 let sim = similarity.from_norms(self.sums[other_row], norms[row], norms[other_row]);
-                let scored_row = SimilarRow::new(other_row, sim);
+                let scored_row = SimilarRow::new(other_row as RowIndex, sim as Score);
 
                 if topk_similar_rows.len() < k {
                     topk_similar_rows.push(scored_row);

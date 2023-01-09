@@ -14,6 +14,7 @@ use rayon::slice::Chunks;
 use rayon::prelude::*;
 use crate::similarity::Similarity;
 use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
+use crate::types::RowIndex;
 
 use crate::utils::zero_out_entry;
 
@@ -137,7 +138,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         zero_out_entry(&mut self.representations_transposed, column, row);
         assert_eq!(*self.representations_transposed.get(column, row).unwrap(), 0.0_f64);
 
-        
+
         self.norms[row] = self.similarity.update_norm(self.norms[row], old_value);
 
         let data = self.representations.data();
@@ -178,17 +179,17 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         let start_time = Instant::now();
         let mut rows_to_fully_recompute = Vec::new();
 
-        let changes: Vec<(usize, TopkUpdate)> = updated_similarities.par_iter().map(|similar| {
+        let changes: Vec<(RowIndex, TopkUpdate)> = updated_similarities.par_iter().map(|similar| {
 
-            assert_ne!(similar.row, row);
+            assert_ne!(similar.row, row as RowIndex);
 
             let other_row = similar.row;
             let similarity = similar.similarity;
 
-            let other_topk = &self.topk_per_row[other_row];
-            let already_in_topk = other_topk.contains(row);
+            let other_topk = &self.topk_per_row[other_row as usize];
+            let already_in_topk = other_topk.contains(row as RowIndex);
 
-            let update = SimilarRow::new(row, similarity);
+            let update = SimilarRow::new(row as RowIndex, similarity);
 
             let change = if !already_in_topk {
                 if similarity != 0.0 {
@@ -229,7 +230,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
                 },
                 Update(new_topk) => {
                     count_update += 1;
-                    self.topk_per_row[other_row] = new_topk;
+                    self.topk_per_row[other_row as usize] = new_topk;
                 },
                 NoChange => {
                     count_nochange += 1;
@@ -245,17 +246,18 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         // TODO is it worth to parallelize this?
         for row_to_recompute in rows_to_fully_recompute {
 
-            for column_index in indptr.outer_inds_sz(row_to_recompute) {
+            let row_index_to_recompute = row_to_recompute as usize;
+            for column_index in indptr.outer_inds_sz(row_index_to_recompute) {
                 let value = data[column_index];
                 for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
                     accumulator.add_to(indices_t[other_row], data_t[other_row] * value.clone());
                 }
             }
 
-            let topk = accumulator.topk_and_clear(row_to_recompute, self.k, &self.similarity,
-                                                  &self.norms);
+            let topk = accumulator.topk_and_clear(row_index_to_recompute, self.k,
+                                                  &self.similarity, &self.norms);
 
-            self.topk_per_row[row_to_recompute] = topk;
+            self.topk_per_row[row_index_to_recompute] = topk;
         }
         let recompute_duration = (Instant::now() - start_time).as_millis();
 
@@ -283,6 +285,7 @@ mod tests {
     use sprs::TriMat;
     use crate::similarity::COSINE;
     use crate::sparse_topk_index::SparseTopKIndex;
+    use crate::types::Score;
 
     #[test]
     fn test_mini_example() {
@@ -339,7 +342,7 @@ mod tests {
         let mut n1: Vec<_> = index.neighbors(1).collect();
         n1.sort();
         assert_eq!(n1.len(), 2);
-        check_entry(n1[0], 3, std::f64::consts::FRAC_1_SQRT_2);
+        check_entry(n1[0], 3, std::f32::consts::FRAC_1_SQRT_2);
         check_entry(n1[1], 2, 0.40824829);
 
         let mut n2: Vec<_> = index.neighbors(2).collect();
@@ -350,7 +353,7 @@ mod tests {
 
         let n3: Vec<_> = index.neighbors(3).collect();
         assert_eq!(n3.len(), 1);
-        check_entry(n3[0], 1, std::f64::consts::FRAC_1_SQRT_2);
+        check_entry(n3[0], 1, std::f32::consts::FRAC_1_SQRT_2);
     }
 
     #[test]
@@ -409,7 +412,7 @@ mod tests {
         let mut n1: Vec<_> = index.neighbors(1).collect();
         n1.sort();
         assert_eq!(n1.len(), 2);
-        check_entry(n1[0], 3, std::f64::consts::FRAC_1_SQRT_2);
+        check_entry(n1[0], 3, std::f32::consts::FRAC_1_SQRT_2);
         check_entry(n1[1], 2, 0.40824829);
 
         let mut n2: Vec<_> = index.neighbors(2).collect();
@@ -420,7 +423,7 @@ mod tests {
 
         let n3: Vec<_> = index.neighbors(3).collect();
         assert_eq!(n3.len(), 1);
-        check_entry(n3[0], 1, std::f64::consts::FRAC_1_SQRT_2);
+        check_entry(n3[0], 1, std::f32::consts::FRAC_1_SQRT_2);
     }
 
     #[test]
@@ -493,7 +496,7 @@ mod tests {
         dbg!(n3);
     }
 
-    fn check_entry(entry: &SimilarRow, expected_user: usize, expected_similarity: f64) {
+    fn check_entry(entry: &SimilarRow, expected_user: RowIndex, expected_similarity: Score) {
         assert_eq!(entry.row, expected_user);
         assert!((entry.similarity - expected_similarity).abs() < 0.0001);
     }

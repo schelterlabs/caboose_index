@@ -1,12 +1,13 @@
 use std::collections::BinaryHeap;
 use crate::similar_row::SimilarRow;
+use crate::types::RowIndex;
 use std::collections::binary_heap::Iter;
 use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
 
 #[derive(Clone)]
 pub(crate) struct TopK {
     heap: BinaryHeap<SimilarRow>,
-    sorted_keys: Vec<usize>,
+    sorted_keys: Vec<RowIndex>,
 }
 
 pub(crate) enum TopkUpdate {
@@ -19,7 +20,7 @@ impl TopK {
 
     pub(crate) fn new(heap: BinaryHeap<SimilarRow>) -> Self {
 
-        let mut keys: Vec<usize> = heap.iter().map(|entry| entry.row).collect();
+        let mut keys: Vec<RowIndex> = heap.iter().map(|entry| entry.row).collect();
         keys.sort();
 
         Self { heap, sorted_keys: keys }
@@ -33,7 +34,7 @@ impl TopK {
         self.heap.iter()
     }
 
-    pub(crate) fn contains(&self, row: usize) -> bool {
+    pub(crate) fn contains(&self, row: RowIndex) -> bool {
         match self.sorted_keys.binary_search(&row) {
             Ok(_) => true,
             _ => false,
@@ -55,7 +56,7 @@ impl TopK {
 
     pub(crate) fn remove_existing_entry(
         &self,
-        row: usize,
+        row: RowIndex,
         k: usize
     ) -> TopkUpdate {
         let mut new_heap = BinaryHeap::with_capacity(k);
@@ -100,6 +101,7 @@ impl TopK {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::Score;
     use super::*;
 
     #[test]
@@ -207,7 +209,7 @@ mod tests {
         }
     }
 
-    fn check_entry(entry: &SimilarRow, expected_user: usize, expected_similarity: f64) {
+    fn check_entry(entry: &SimilarRow, expected_user: RowIndex, expected_similarity: Score) {
         assert_eq!(entry.row, expected_user);
         assert!((entry.similarity - expected_similarity).abs() < 0.0001);
     }

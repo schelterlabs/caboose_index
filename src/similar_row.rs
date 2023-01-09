@@ -1,13 +1,15 @@
 use std::cmp::Ordering;
 
+use crate::types::{RowIndex,Score};
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct SimilarRow {
-    pub row: usize,
-    pub similarity: f64,
+    pub row: RowIndex,
+    pub similarity: Score,
 }
 
 impl SimilarRow {
-    pub fn new(row: usize, similarity: f64) -> Self {
+    pub fn new(row: RowIndex, similarity: Score) -> Self {
         SimilarRow { row, similarity }
     }
 }
