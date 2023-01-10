@@ -11,7 +11,7 @@ use caboose_index::similarity::COSINE;
 
 fn main() {
     //similarity_bench("yahoosongs-raw.npz", 1000991, 624962, 50, 5);
-    similarity_bench("ciaodvd-raw.npz", 21020, 71634, 50, 5);
+    similarity_bench("lastfm-raw.npz", 993, 174078, 50, 5);
     similarity_bench("tifu-instacart.npz", 30000, 28438, 900, 5);
     similarity_bench("pernir-instacart.npz", 30000, 43936, 300, 5);
     similarity_bench("movielens10m-raw.npz", 69879, 10678, 50, 5);
@@ -43,6 +43,6 @@ fn similarity_bench(
         let index = SparseTopKIndex::new(representations_copy, k, COSINE);
         let end = Instant::now();
         let duration = (end - start).as_millis();
-        println!("{:?}: {:?}, {:?}", matrix_file, duration, index.neighbors(0).len());
+        println!("{:?}: {:?}, {:?}", matrix_file, duration, index.neighbors(1).len());
     };
 }

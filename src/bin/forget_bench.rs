@@ -15,10 +15,10 @@ fn main() {
 
     let num_samples_to_forget = 100;
 
-    // for _ in 0..5 {
-    //     forget_bench("ciaodvd-raw.npz", 21020, 71634, 50, 500);
-    // }
-    //
+    for _ in 0..5 {
+        forget_bench("lastfm-raw.npz", 993, 174078, 50, num_samples_to_forget);
+    }
+
     for _ in 0..5 {
         forget_bench("tifu-instacart.npz", 30000, 28438, 900, num_samples_to_forget);
     }
