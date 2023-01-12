@@ -173,12 +173,17 @@ impl SparseTopKIndex {
             accumulator
         }).collect();
 
+        let all_directly_affected_rows: Vec<usize> = indptr_t.outer_inds_sz(column)
+            .map(|i| indices_t[i])
+            .collect();
+
         let (updated_similarities, topk) = RowAccumulator::merge_and_collect_all(
             row,
             &similarity,
             self.k,
             &self.norms,
-            accs);
+            accs,
+            all_directly_affected_rows);
 
         let parallel_similarity_duration = (Instant::now() - start_time).as_millis();
 
@@ -499,8 +504,10 @@ mod tests {
         check_entry(n2[1], 1, 0.57735027);
 
         let n3: Vec<_> = index.neighbors(3).collect();
+        assert_eq!(n3.len(), 0);
         dbg!(n3);
     }
+
 
     fn check_entry(entry: &SimilarRow, expected_user: RowIndex, expected_similarity: Score) {
         assert_eq!(entry.row, expected_user);

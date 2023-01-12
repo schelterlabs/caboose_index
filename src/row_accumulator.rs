@@ -39,7 +39,8 @@ impl RowAccumulator {
         similarity: &S,
         k: usize,
         norms: &Vec<f64>,
-        mut accumulators: Vec<RowAccumulator>
+        mut accumulators: Vec<RowAccumulator>,
+        all_directly_affected_rows: Vec<usize>,
     ) -> (Vec<SimilarRow>, TopK) {
 
         let last = accumulators.pop().unwrap();
@@ -59,6 +60,14 @@ impl RowAccumulator {
         }
 
         let mut similar_users = Vec::new();
+
+        // There might be rows where the deleted entry was the only intersection,
+        // they will miss from the multiplication result
+        for affected_row in all_directly_affected_rows {
+            if non_zero_indices[affected_row] != 1 {
+                similar_users.push(SimilarRow::new(affected_row as RowIndex, 0.0))
+            }
+        }
 
         for other_row in 0..sums.len() {
             if non_zero_indices[other_row] == 1 && other_row != row {

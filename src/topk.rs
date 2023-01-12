@@ -5,12 +5,13 @@ use std::collections::binary_heap::Iter;
 use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
 use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct TopK {
     heap: BinaryHeap<SimilarRow>,
     sorted_keys: Vec<RowIndex>,
 }
 
+#[derive(Debug)]
 pub(crate) enum TopkUpdate {
     NoChange,
     Update(TopK),
