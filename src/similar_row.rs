@@ -1,8 +1,9 @@
 use std::cmp::Ordering;
+use serde::{Serialize, Deserialize};
 
 use crate::types::{RowIndex,Score};
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct SimilarRow {
     pub row: RowIndex,
     pub similarity: Score,

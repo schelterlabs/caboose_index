@@ -1,3 +1,4 @@
+use serde::{Serialize, Deserialize};
 
 pub trait Similarity {
     fn from_norms(&self, dot_product: f64, norm_a: f64, norm_b: f64) -> f64;
@@ -8,7 +9,7 @@ pub trait Similarity {
 
 pub const COSINE: Cosine = Cosine {};
 
-
+#[derive(Serialize, Deserialize)]
 pub struct Cosine {}
 
 impl Similarity for Cosine {

@@ -3,8 +3,9 @@ use crate::similar_row::SimilarRow;
 use crate::types::RowIndex;
 use std::collections::binary_heap::Iter;
 use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
+use serde::{Serialize, Deserialize};
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct TopK {
     heap: BinaryHeap<SimilarRow>,
     sorted_keys: Vec<RowIndex>,

@@ -5,3 +5,4 @@ pub mod topk;
 pub mod row_accumulator;
 pub mod utils;
 pub mod similarity;
+pub mod serialize;

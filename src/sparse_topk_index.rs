@@ -6,34 +6,38 @@ use std::clone::Clone;
 use std::collections::binary_heap::Iter;
 use std::collections::BinaryHeap;
 use sprs::CsMat;
-use std::marker::Sync;
 use std::time::Instant;
+use std::sync::Mutex;
+use indicatif::{ProgressBar, ProgressStyle};
+
 
 use num_cpus::get_physical;
 use rayon::slice::Chunks;
 use rayon::prelude::*;
-use crate::similarity::Similarity;
+use crate::similarity::{COSINE, Similarity};
 use crate::topk::TopkUpdate::{NeedsFullRecomputation, NoChange, Update};
 use crate::types::RowIndex;
 
 use crate::utils::zero_out_entry;
 
-pub struct SparseTopKIndex<S: Similarity> {
-    representations: CsMat<f64>,
-    representations_transposed: CsMat<f64>,
-    topk_per_row: Vec<TopK>,
-    k: usize,
-    similarity: S,
-    norms: Vec<f64>,
+pub struct SparseTopKIndex {
+    pub representations: CsMat<f64>, // TODO required for one bench, fix this
+    pub(crate) representations_transposed: CsMat<f64>,
+    pub(crate) topk_per_row: Vec<TopK>,
+    pub(crate) k: usize,
+    pub(crate) norms: Vec<f64>,
 }
 
-impl<S: Similarity + Sync> SparseTopKIndex<S> {
+
+
+
+impl SparseTopKIndex {
 
     pub fn neighbors(&self, row: usize) -> Iter<SimilarRow> {
         self.topk_per_row[row].iter()
     }
 
-    fn parallel_topk(
+    fn parallel_topk<S: Similarity + Sync>(
         row_ranges: Chunks<usize>,
         representations: &CsMat<f64>,
         representations_transposed: &CsMat<f64>,
@@ -49,6 +53,11 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         let data_t = representations_transposed.data();
         let indices_t = representations_transposed.indices();
         let indptr_t = representations_transposed.indptr();
+
+        let bar = ProgressBar::new(num_rows as u64);
+        let template = "{wide_bar} | {pos}/{len} | Elapsed: {elapsed_precise}, ETA: {eta_precise}";
+        bar.set_style(ProgressStyle::default_bar().template(template).unwrap());
+        let shared_progress = Mutex::new(bar);
 
         let topk_partitioned: Vec<_> = row_ranges.map(|range| {
             let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
@@ -68,7 +77,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
                 let topk = accumulator.topk_and_clear(*row, k, similarity, &norms);
                 topk_per_row.push(topk);
             }
-
+            shared_progress.lock().unwrap().inc(range.len() as u64);
             (range, topk_per_row)
         }).collect();
 
@@ -79,12 +88,15 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
         }
     }
 
-    pub fn new(representations: CsMat<f64>, k: usize, similarity: S) -> Self {
+    pub fn new(representations: CsMat<f64>, k: usize) -> Self {
         let (num_rows, _) = representations.shape();
 
         let mut representations_transposed: CsMat<f64> = representations.to_owned();
         representations_transposed.transpose_mut();
         representations_transposed = representations_transposed.to_csr();
+
+        // TODO Make configurable at some point
+        let similarity = COSINE;
 
         //TODO is it worth to parallelize this?
         let norms: Vec<f64> = (0..num_rows)
@@ -99,7 +111,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             .collect();
 
         let row_range = (0..num_rows).collect::<Vec<usize>>();
-        let chunk_size = 128; // Magic number, seems to work well
+        let chunk_size = 1024; // Might make sense to tune this
         let row_ranges = row_range.par_chunks(chunk_size);
         let mut topk_per_row: Vec<TopK> = vec![TopK::new(BinaryHeap::new()); num_rows];
 
@@ -120,26 +132,20 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             topk_per_row,
             k,
             norms,
-            similarity
         }
     }
 
 
     pub fn forget(&mut self, row: usize, column: usize) {
 
+        let similarity = COSINE;
         let (num_rows, _) = self.representations.shape();
-
         let old_value = self.representations.get(row, column).unwrap().clone();
 
-        //println!("-Updating user representations");
         zero_out_entry(&mut self.representations, row, column);
-        assert_eq!(*self.representations.get(row, column).unwrap(), 0.0_f64);
-
         zero_out_entry(&mut self.representations_transposed, column, row);
-        assert_eq!(*self.representations_transposed.get(column, row).unwrap(), 0.0_f64);
 
-
-        self.norms[row] = self.similarity.update_norm(self.norms[row], old_value);
+        self.norms[row] = similarity.update_norm(self.norms[row], old_value);
 
         let data = self.representations.data();
         let indices = self.representations.indices();
@@ -169,7 +175,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
 
         let (updated_similarities, topk) = RowAccumulator::merge_and_collect_all(
             row,
-            &self.similarity,
+            &similarity,
             self.k,
             &self.norms,
             accs);
@@ -255,7 +261,7 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
             }
 
             let topk = accumulator.topk_and_clear(row_index_to_recompute, self.k,
-                                                  &self.similarity, &self.norms);
+                                                  &similarity, &self.norms);
 
             self.topk_per_row[row_index_to_recompute] = topk;
         }
@@ -282,8 +288,8 @@ impl<S: Similarity + Sync> SparseTopKIndex<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f32::consts::FRAC_1_SQRT_2;
     use sprs::TriMat;
-    use crate::similarity::COSINE;
     use crate::sparse_topk_index::SparseTopKIndex;
     use crate::types::Score;
 
@@ -331,7 +337,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let index = SparseTopKIndex::new(user_representations, 2, COSINE);
+        let index = SparseTopKIndex::new(user_representations, 2);
 
         let mut n0: Vec<_> = index.neighbors(0).collect();
         n0.sort();
@@ -342,7 +348,7 @@ mod tests {
         let mut n1: Vec<_> = index.neighbors(1).collect();
         n1.sort();
         assert_eq!(n1.len(), 2);
-        check_entry(n1[0], 3, std::f32::consts::FRAC_1_SQRT_2);
+        check_entry(n1[0], 3, FRAC_1_SQRT_2);
         check_entry(n1[1], 2, 0.40824829);
 
         let mut n2: Vec<_> = index.neighbors(2).collect();
@@ -353,7 +359,7 @@ mod tests {
 
         let n3: Vec<_> = index.neighbors(3).collect();
         assert_eq!(n3.len(), 1);
-        check_entry(n3[0], 1, std::f32::consts::FRAC_1_SQRT_2);
+        check_entry(n3[0], 1, FRAC_1_SQRT_2);
     }
 
     #[test]
@@ -400,7 +406,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let mut index = SparseTopKIndex::new(user_representations, 2, COSINE);
+        let mut index = SparseTopKIndex::new(user_representations, 2);
 
         index.forget(0, 1);
 
@@ -412,7 +418,7 @@ mod tests {
         let mut n1: Vec<_> = index.neighbors(1).collect();
         n1.sort();
         assert_eq!(n1.len(), 2);
-        check_entry(n1[0], 3, std::f32::consts::FRAC_1_SQRT_2);
+        check_entry(n1[0], 3, FRAC_1_SQRT_2);
         check_entry(n1[1], 2, 0.40824829);
 
         let mut n2: Vec<_> = index.neighbors(2).collect();
@@ -423,7 +429,7 @@ mod tests {
 
         let n3: Vec<_> = index.neighbors(3).collect();
         assert_eq!(n3.len(), 1);
-        check_entry(n3[0], 1, std::f32::consts::FRAC_1_SQRT_2);
+        check_entry(n3[0], 1, FRAC_1_SQRT_2);
     }
 
     #[test]
@@ -470,7 +476,7 @@ mod tests {
         }
 
         let user_representations = input.to_csr();
-        let mut index = SparseTopKIndex::new(user_representations, 2, COSINE);
+        let mut index = SparseTopKIndex::new(user_representations, 2);
 
         index.forget(0, 1);
         index.forget(1, 3);
