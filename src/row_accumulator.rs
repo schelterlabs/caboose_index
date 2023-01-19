@@ -39,14 +39,14 @@ impl RowAccumulator {
         similarity: &S,
         k: usize,
         norms: &Vec<f64>,
-        mut accumulators: Vec<RowAccumulator>,
+        accumulators: Vec<RowAccumulator>,
         all_directly_affected_rows: Vec<usize>,
     ) -> (Vec<SimilarRow>, TopK) {
 
-        let last = accumulators.pop().unwrap();
+        // TODO: micro optimization possible: reuse sums+nonzeros from last accum
 
-        let mut sums = last.sums;
-        let mut non_zero_indices = vec![0; sums.len()];
+        let mut sums = vec![0.0; norms.len()];
+        let mut non_zero_indices = vec![0; norms.len()];
         let mut topk_similar_rows: BinaryHeap<SimilarRow> = BinaryHeap::with_capacity(k);
 
         for other in accumulators {
