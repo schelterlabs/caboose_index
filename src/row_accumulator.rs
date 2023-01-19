@@ -62,7 +62,7 @@ impl RowAccumulator {
         let mut similar_users = Vec::new();
 
         // There might be rows where the deleted entry was the only intersection,
-        // they will miss from the multiplication result
+        // they will miss from the multiplication result and need to be re-identified here
         for affected_row in all_directly_affected_rows {
             if non_zero_indices[affected_row] != 1 {
                 similar_users.push(SimilarRow::new(affected_row as RowIndex, 0.0))

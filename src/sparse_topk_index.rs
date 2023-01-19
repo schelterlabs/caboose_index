@@ -140,7 +140,15 @@ impl SparseTopKIndex {
 
         let similarity = COSINE;
         let (num_rows, _) = self.representations.shape();
-        let old_value = self.representations.get(row, column).unwrap().clone();
+        let old_value = self.representations.get(row, column);
+
+        assert!(
+            old_value.is_some(),
+            "Cannot forget non-existing value of row {} and column {}!",
+            row,
+            column);
+
+        let old_value = old_value.unwrap().clone();
 
         zero_out_entry(&mut self.representations, row, column);
         zero_out_entry(&mut self.representations_transposed, column, row);
@@ -204,7 +212,10 @@ impl SparseTopKIndex {
 
             let change = if !already_in_topk {
                 if similarity != 0.0 {
-                    assert_eq!(other_topk.len(), self.k);
+                    assert_eq!(other_topk.len(), self.k,
+                               "Invariant violated: row {} (with updated similarity {}) not in \
+                               topk of row {}, but topk have length of {} instead of k={} only",
+                               row, similarity, other_row, other_topk.len(), self.k);
                     other_topk.offer_non_existing_entry(update)
                 } else {
                     NoChange
