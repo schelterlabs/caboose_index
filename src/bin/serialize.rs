@@ -26,19 +26,23 @@ fn serialize(
     k: usize,
     output_file: &str,)
 {
+    print!("Reading {}", matrix_file);
     let mut npz = NpzReader::new(File::open(matrix_file).unwrap()).unwrap();
     let indptr: Array1<i32> = npz.by_name("indptr.npy").unwrap();
     let indices: Array1<i32> = npz.by_name("indices.npy").unwrap();
     let data: Array1<f64> = npz.by_name("data.npy").unwrap();
 
+    print!("Cloning indices and data...");
     let indices_copy: Vec<usize> = indices.into_raw_vec()
         .into_iter().map(|x| x as usize).collect();
     let indptr_copy: Vec<usize> = indptr.into_raw_vec()
         .into_iter().map(|x| x as usize).collect();
 
+    print!("Converting to CSR");
     let representations =
         CsMat::new((num_rows, num_cols), indptr_copy, indices_copy, data.into_raw_vec());
 
-        let index = SparseTopKIndex::new(representations, k);
-        serialize_to_file(index, output_file);
+    print!("Computing index");
+    let index = SparseTopKIndex::new(representations, k);
+    serialize_to_file(index, output_file);
 }
