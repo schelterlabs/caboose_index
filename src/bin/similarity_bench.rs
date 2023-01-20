@@ -10,7 +10,7 @@ use caboose_index::sparse_topk_index::SparseTopKIndex;
 
 fn main() {
     //similarity_bench("yahoosongs-raw.npz", 1000991, 624962, 50, 5);
-    //similarity_bench("spotify-raw.npz", 1000000, 2262292, 50, 5);
+    similarity_bench("spotify-raw.npz", 1000000, 2262292, 50, 5);
     similarity_bench("lastfm-raw.npz", 993, 174078, 50, 5);
     similarity_bench("tifu-instacart.npz", 30000, 28438, 900, 5);
     similarity_bench("pernir-instacart.npz", 30000, 43936, 300, 5);
