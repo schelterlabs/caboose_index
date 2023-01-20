@@ -9,9 +9,9 @@ use caboose_index::sparse_topk_index::SparseTopKIndex;
 use caboose_index::serialize::serialize_to_file;
 
 fn main() {
-    //similarity_bench("yahoosongs-raw.npz", 1000991, 624962, 50, 5);
+    serialize("yahoosongs-raw.npz", 1000991, 624962, 50, "yahoosongs-raw-50.bin");
 
-    serialize("spotify-raw.npz", 1000000, 2262292, 50, "spotify-raw-50.bin");
+    //serialize("spotify-raw.npz", 1000000, 2262292, 50, "spotify-raw-50.bin");
     //serialize("lastfm-raw.npz", 993, 174078, 50, "lastfm-raw-50.bin");
     //serialize("tifu-instacart.npz", 30000, 28438, 900, "tifu-instacart-900.bin");
     //serialize("pernir-instacart.npz", 30000, 43936, 300, "pernir-instacart-300.bin");
