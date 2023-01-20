@@ -12,9 +12,6 @@ name = "forget_bench"
 [[bin]]
 name = "serialize"
 
-[[bin]]
-name = "debug"
-
 [dependencies]
 numpy = "0.17.2"
 sprs = "0.11"
