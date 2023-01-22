@@ -62,6 +62,10 @@ impl SparseTopKIndex {
         let shared_progress = Mutex::new(bar);
 
         let topk_partitioned: Vec<_> = row_ranges.map(|range| {
+
+            eprintln!("===Starting on partition: {}->{}",
+                      range.first().unwrap(), range.last().unwrap());
+
             let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
@@ -126,7 +130,7 @@ impl SparseTopKIndex {
             .map(|v: String| v.parse::<usize>().unwrap())
             .unwrap_or(1024);
 
-        eprintln!("-- Configuring for top-k -- num_threads: {}; pinning? {}; chunk size: {}",
+        eprintln!("--Configuring for top-k -- num_threads: {}; pinning? {}; chunk size: {}",
                   num_threads, pin_threads, chunk_size);
 
         rayon::ThreadPoolBuilder::new()
