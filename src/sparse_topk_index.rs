@@ -93,7 +93,7 @@ impl SparseTopKIndex {
     pub fn new(representations: CsMat<f64>, k: usize) -> Self {
         let (num_rows, _) = representations.shape();
 
-        eprintln!("--Creating R^\top...");
+        eprintln!("--Creating transpose of R...");
         let mut representations_transposed: CsMat<f64> = representations.to_owned();
         representations_transposed.transpose_mut();
         representations_transposed = representations_transposed.to_csr();
@@ -122,7 +122,13 @@ impl SparseTopKIndex {
             .map(|v: String| v.parse::<bool>().unwrap())
             .unwrap_or(false);
 
-        println!("Creating threadpool with {} threads; pinning? {}", num_threads, pin_threads);
+        let chunk_size = env::var("CABOOSE_TOPK_CHUNK_SIZE")
+            .map(|v: String| v.parse::<usize>().unwrap())
+            .unwrap_or(1024);
+
+        eprintln!("-- Configuring for top-k -- num_threads: {}; pinning? {}; chunk size: {}",
+                  num_threads, pin_threads, chunk_size);
+
         rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .start_handler(move |id| {
@@ -137,7 +143,6 @@ impl SparseTopKIndex {
             .unwrap();
 
         let row_range = (0..num_rows).collect::<Vec<usize>>();
-        let chunk_size = 1024; // Might make sense to tune this
         let row_ranges = row_range.par_chunks(chunk_size);
         let mut topk_per_row: Vec<TopK> = vec![TopK::new(BinaryHeap::new()); num_rows];
 
