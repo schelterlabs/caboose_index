@@ -69,6 +69,7 @@ impl SparseTopKIndex {
             let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
+            //let mut num_rows_processed = 0;
             for row in range {
                 for column_index in indptr.outer_inds_sz(*row) {
                     let value = data[column_index];
@@ -82,8 +83,9 @@ impl SparseTopKIndex {
 
                 let topk = accumulator.topk_and_clear(*row, k, similarity, &norms);
                 topk_per_row.push(topk);
+                shared_progress.lock().unwrap().inc(1 as u64);
             }
-            shared_progress.lock().unwrap().inc(range.len() as u64);
+            //shared_progress.lock().unwrap().inc(range.len() as u64);
             (range, topk_per_row)
         }).collect();
 
