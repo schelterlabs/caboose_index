@@ -39,7 +39,7 @@ fn serialize(
 
     let representations =
         CsMat::new((num_rows, num_cols), indptr_copy, indices_copy, data.into_raw_vec());
-    
+
     let index = SparseTopKIndex::new(representations, k);
     serialize_to_file(index, output_file);
 }
