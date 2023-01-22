@@ -63,8 +63,8 @@ impl SparseTopKIndex {
 
         let topk_partitioned: Vec<_> = row_ranges.map(|range| {
 
-            eprintln!("===Starting on partition: {}->{}",
-                      range.first().unwrap(), range.last().unwrap());
+            // eprintln!("===Starting on partition: {}->{}",
+            //           range.first().unwrap(), range.last().unwrap());
 
             let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
             let mut accumulator = RowAccumulator::new(num_rows.clone());
