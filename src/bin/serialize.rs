@@ -32,17 +32,14 @@ fn serialize(
     let indices: Array1<i32> = npz.by_name("indices.npy").unwrap();
     let data: Array1<f64> = npz.by_name("data.npy").unwrap();
 
-    println!("Cloning indices and data...");
     let indices_copy: Vec<usize> = indices.into_raw_vec()
         .into_iter().map(|x| x as usize).collect();
     let indptr_copy: Vec<usize> = indptr.into_raw_vec()
         .into_iter().map(|x| x as usize).collect();
 
-    println!("Converting to CSR");
     let representations =
         CsMat::new((num_rows, num_cols), indptr_copy, indices_copy, data.into_raw_vec());
-
-    println!("Computing index");
+    
     let index = SparseTopKIndex::new(representations, k);
     serialize_to_file(index, output_file);
 }
