@@ -11,9 +11,13 @@ fn main() {
     let num_samples_to_forget = 100;
 
     for _ in 0..5 {
-        forget_bench("spotify-raw-50.bin", 1000000, 2262292, num_samples_to_forget);
+        forget_bench("yahoosongs-raw-50.bin", 1000991, 624962, num_samples_to_forget);
     }
     /*
+    for _ in 0..5 {
+        forget_bench("spotify-raw-50.bin", 1000000, 2262292, num_samples_to_forget);
+    }
+
     for _ in 0..5 {
         forget_bench("lastfm-raw-50.bin", 993, 174078, num_samples_to_forget);
     }

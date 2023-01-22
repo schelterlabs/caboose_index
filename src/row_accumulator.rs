@@ -72,17 +72,21 @@ impl RowAccumulator {
         for other_row in 0..sums.len() {
             if non_zero_indices[other_row] == 1 && other_row != row {
                 let sim = similarity.from_norms(sums[other_row], norms[row], norms[other_row]);
-                let scored_row = SimilarRow::new(other_row as RowIndex, sim as Score);
-                similar_users.push(scored_row);
 
-                if sim != 0.0 {
-                    let scored_row_clone = SimilarRow::new(other_row as RowIndex, sim as Score);
-                    if topk_similar_rows.len() < k {
-                        topk_similar_rows.push(scored_row_clone);
-                    } else {
-                        let mut top = topk_similar_rows.peek_mut().unwrap();
-                        if scored_row_clone < *top {
-                            *top = scored_row_clone;
+                // Required to handle rows of zeros...
+                if !sim.is_nan() {
+                    let scored_row = SimilarRow::new(other_row as RowIndex, sim as Score);
+                    similar_users.push(scored_row);
+
+                    if sim != 0.0 {
+                        let scored_row_clone = SimilarRow::new(other_row as RowIndex, sim as Score);
+                        if topk_similar_rows.len() < k {
+                            topk_similar_rows.push(scored_row_clone);
+                        } else {
+                            let mut top = topk_similar_rows.peek_mut().unwrap();
+                            if scored_row_clone < *top {
+                                *top = scored_row_clone;
+                            }
                         }
                     }
                 }
