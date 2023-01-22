@@ -93,6 +93,7 @@ impl SparseTopKIndex {
     pub fn new(representations: CsMat<f64>, k: usize) -> Self {
         let (num_rows, _) = representations.shape();
 
+        eprintln!("--Creating R^\top...");
         let mut representations_transposed: CsMat<f64> = representations.to_owned();
         representations_transposed.transpose_mut();
         representations_transposed = representations_transposed.to_csr();
@@ -100,6 +101,7 @@ impl SparseTopKIndex {
         // TODO Make configurable at some point
         let similarity = COSINE;
 
+        eprintln!("--Computing row norms...");
         //TODO is it worth to parallelize this?
         let norms: Vec<f64> = (0..num_rows)
             .map(|row| {
@@ -120,15 +122,14 @@ impl SparseTopKIndex {
             .map(|v: String| v.parse::<bool>().unwrap())
             .unwrap_or(false);
 
-        println!("Creating threadpool with {} threads", num_threads);
+        println!("Creating threadpool with {} threads; pinning? {}", num_threads, pin_threads);
         rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .start_handler(move |id| {
-                println!("Thread {} starting in pool", id);
+                //println!("Thread {} starting in pool", id);
                 if pin_threads {
                     let core_ids = core_affinity::get_core_ids().unwrap();
-
-                    println!("Pinning thread {} to core {:?}", id, core_ids[id]);
+                    //println!("Pinning thread {} to core {:?}", id, core_ids[id]);
                     core_affinity::set_for_current(core_ids[id]);
                 }
             })
@@ -140,6 +141,7 @@ impl SparseTopKIndex {
         let row_ranges = row_range.par_chunks(chunk_size);
         let mut topk_per_row: Vec<TopK> = vec![TopK::new(BinaryHeap::new()); num_rows];
 
+        eprintln!("--Scheduling parallel top-k computation...");
         SparseTopKIndex::parallel_topk(
             row_ranges,
             &representations,
