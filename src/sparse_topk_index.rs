@@ -10,6 +10,8 @@ use std::time::Instant;
 use std::sync::Mutex;
 use indicatif::{ProgressBar, ProgressStyle};
 
+use std::env;
+use core_affinity;
 
 use num_cpus::get_physical;
 use rayon::slice::Chunks;
@@ -109,6 +111,29 @@ impl SparseTopKIndex {
                 similarity.finalize_norm(norm_accumulator)
             })
             .collect();
+
+        let num_threads = env::var("CABOOSE_NUM_THREADS")
+            .map(|v: String| v.parse::<usize>().unwrap())
+            .unwrap_or(num_cpus::get());
+
+        let pin_threads = env::var("CABOOSE_PIN_THREADS")
+            .map(|v: String| v.parse::<bool>().unwrap())
+            .unwrap_or(false);
+
+        println!("Creating threadpool with {} threads", num_threads);
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .start_handler(move |id| {
+                println!("Thread {} starting in pool", id);
+                if pin_threads {
+                    let core_ids = core_affinity::get_core_ids().unwrap();
+
+                    println!("Pinning thread {} to core {:?}", id, core_ids[id]);
+                    core_affinity::set_for_current(core_ids[id]);
+                }
+            })
+            .build()
+            .unwrap();
 
         let row_range = (0..num_rows).collect::<Vec<usize>>();
         let chunk_size = 1024; // Might make sense to tune this
