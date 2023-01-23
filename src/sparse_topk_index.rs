@@ -39,6 +39,36 @@ impl SparseTopKIndex {
         self.topk_per_row[row].iter()
     }
 
+    fn configure_rayon() {
+        let num_threads = env::var("CABOOSE_NUM_THREADS")
+            .map(|v: String| v.parse::<usize>().unwrap())
+            .unwrap_or(num_cpus::get());
+
+        let pin_threads = env::var("CABOOSE_PIN_THREADS")
+            .map(|v: String| v.parse::<bool>().unwrap())
+            .unwrap_or(false);
+
+        let chunk_size = env::var("CABOOSE_TOPK_CHUNK_SIZE")
+            .map(|v: String| v.parse::<usize>().unwrap())
+            .unwrap_or(1024);
+
+        eprintln!("--Configuring for top-k -- num_threads: {}; pinning? {}; chunk size: {}",
+                  num_threads, pin_threads, chunk_size);
+
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .start_handler(move |id| {
+                //println!("Thread {} starting in pool", id);
+                if pin_threads {
+                    let core_ids = core_affinity::get_core_ids().unwrap();
+                    //println!("Pinning thread {} to core {:?}", id, core_ids[id]);
+                    core_affinity::set_for_current(core_ids[id]);
+                }
+            })
+            .build()
+            .unwrap();
+    }
+
     fn parallel_topk<S: Similarity + Sync>(
         row_ranges: Chunks<usize>,
         representations: &CsMat<f64>,
@@ -120,33 +150,7 @@ impl SparseTopKIndex {
             })
             .collect();
 
-        let num_threads = env::var("CABOOSE_NUM_THREADS")
-            .map(|v: String| v.parse::<usize>().unwrap())
-            .unwrap_or(num_cpus::get());
-
-        let pin_threads = env::var("CABOOSE_PIN_THREADS")
-            .map(|v: String| v.parse::<bool>().unwrap())
-            .unwrap_or(false);
-
-        let chunk_size = env::var("CABOOSE_TOPK_CHUNK_SIZE")
-            .map(|v: String| v.parse::<usize>().unwrap())
-            .unwrap_or(1024);
-
-        eprintln!("--Configuring for top-k -- num_threads: {}; pinning? {}; chunk size: {}",
-                  num_threads, pin_threads, chunk_size);
-
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(num_threads)
-            .start_handler(move |id| {
-                //println!("Thread {} starting in pool", id);
-                if pin_threads {
-                    let core_ids = core_affinity::get_core_ids().unwrap();
-                    //println!("Pinning thread {} to core {:?}", id, core_ids[id]);
-                    core_affinity::set_for_current(core_ids[id]);
-                }
-            })
-            .build()
-            .unwrap();
+        SparseTopKIndex::configure_rayon();
 
         let row_range = (0..num_rows).collect::<Vec<usize>>();
         let row_ranges = row_range.par_chunks(chunk_size);
@@ -175,6 +179,8 @@ impl SparseTopKIndex {
 
 
     pub fn forget(&mut self, row: usize, column: usize) {
+
+        SparseTopKIndex::configure_rayon();
 
         let similarity = COSINE;
         let (num_rows, _) = self.representations.shape();

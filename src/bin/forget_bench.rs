@@ -13,7 +13,7 @@ fn main() {
     for _ in 0..5 {
         forget_bench("yahoosongs-raw-50.bin", 1000991, 624962, num_samples_to_forget);
     }
-    /*
+
     for _ in 0..5 {
         forget_bench("spotify-raw-50.bin", 1000000, 2262292, num_samples_to_forget);
     }
@@ -32,8 +32,7 @@ fn main() {
 
     for _ in 0..5 {
         forget_bench("movielens10m-raw-50.bin", 69879, 10678, num_samples_to_forget);
-    }*/
-
+    }
 }
 
 fn forget_bench(
