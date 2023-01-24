@@ -39,7 +39,7 @@ impl SparseTopKIndex {
         self.topk_per_row[row].iter()
     }
 
-    fn configure_rayon() {
+    fn configure_rayon(verbose: bool) {
         let num_threads = env::var("CABOOSE_NUM_THREADS")
             .map(|v: String| v.parse::<usize>().unwrap())
             .unwrap_or(num_cpus::get());
@@ -48,12 +48,10 @@ impl SparseTopKIndex {
             .map(|v: String| v.parse::<bool>().unwrap())
             .unwrap_or(false);
 
-        let chunk_size = env::var("CABOOSE_TOPK_CHUNK_SIZE")
-            .map(|v: String| v.parse::<usize>().unwrap())
-            .unwrap_or(1024);
-
-        eprintln!("--Configuring for top-k -- num_threads: {}; pinning? {}; chunk size: {}",
-                  num_threads, pin_threads, chunk_size);
+        if verbose {
+            eprintln!("--Configuring for top-k -- num_threads: {}; pinning? {};",
+                      num_threads, pin_threads);
+        }
 
         rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
@@ -150,7 +148,11 @@ impl SparseTopKIndex {
             })
             .collect();
 
-        SparseTopKIndex::configure_rayon();
+        SparseTopKIndex::configure_rayon(true);
+
+        let chunk_size = env::var("CABOOSE_TOPK_CHUNK_SIZE")
+            .map(|v: String| v.parse::<usize>().unwrap())
+            .unwrap_or(1024);
 
         let row_range = (0..num_rows).collect::<Vec<usize>>();
         let row_ranges = row_range.par_chunks(chunk_size);
@@ -180,7 +182,7 @@ impl SparseTopKIndex {
 
     pub fn forget(&mut self, row: usize, column: usize) {
 
-        SparseTopKIndex::configure_rayon();
+        SparseTopKIndex::configure_rayon(false);
 
         let similarity = COSINE;
         let (num_rows, _) = self.representations.shape();
