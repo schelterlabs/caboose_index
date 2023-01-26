@@ -8,49 +8,36 @@ use caboose_index::serialize::deserialize_from;
 
 fn main() {
 
-    let num_repetitions = 1;
+
     let num_samples_to_forget = 500;
 
-    for _ in 0..num_repetitions {
-        forget_bench("tifu-instacart-900.bin", 30000, 28438, num_samples_to_forget);
-    }
+    println!("type,k,p50,p90");
 
-    for _ in 0..num_repetitions {
-        forget_bench("pernir-instacart-300.bin", 30000, 43936, num_samples_to_forget);
-    }
+    forget_bench("tifu-instacart-10.bin", 30000, 28438, num_samples_to_forget, 10);
+    forget_bench("pernir-instacart-10.bin", 30000, 43936, num_samples_to_forget, 10);
+    forget_bench("synthetic10-raw-10.bin", 10000, 50000, num_samples_to_forget, 10);
+    forget_bench("movielens10m-raw-10.bin", 69879, 10678, num_samples_to_forget, 10);
+    forget_bench("lastfm-raw-10.bin", 993, 174078, num_samples_to_forget, 10);
+    forget_bench("synthetic50-raw-10.bin", 100000, 50000, num_samples_to_forget, 10);
+    forget_bench("spotify-raw-10.bin", 1000000, 2262292, num_samples_to_forget, 10);
+    forget_bench("yahoosongs-raw-10.bin", 1000991, 624962, num_samples_to_forget, 10);
 
-    for _ in 0..num_repetitions {
-        forget_bench("synthetic10-raw-50.bin", 10000, 50000, num_samples_to_forget);
-    }
-
-    for _ in 0..num_repetitions {
-        forget_bench("movielens10m-raw-50.bin", 69879, 10678, num_samples_to_forget);
-    }
-
-    for _ in 0..num_repetitions {
-        forget_bench("lastfm-raw-50.bin", 993, 174078, num_samples_to_forget);
-    }
-
-    for _ in 0..num_repetitions {
-        forget_bench("synthetic50-raw-50.bin", 100000, 50000, num_samples_to_forget);
-    }
-
-    for _ in 0..num_repetitions {
-        forget_bench("spotify-raw-50.bin", 1000000, 2262292, num_samples_to_forget);
-    }
-
-    for _ in 0..num_repetitions {
-        forget_bench("yahoosongs-raw-50.bin", 1000991, 624962, num_samples_to_forget);
-    }
-
-
+    forget_bench("tifu-instacart-900.bin", 30000, 28438, num_samples_to_forget, 50);
+    forget_bench("pernir-instacart-300.bin", 30000, 43936, num_samples_to_forget, 50);
+    forget_bench("synthetic10-raw-50.bin", 10000, 50000, num_samples_to_forget, 50);
+    forget_bench("movielens10m-raw-50.bin", 69879, 10678, num_samples_to_forget, 50);
+    forget_bench("lastfm-raw-50.bin", 993, 174078, num_samples_to_forget, 50);
+    forget_bench("synthetic50-raw-50.bin", 100000, 50000, num_samples_to_forget, 50);
+    forget_bench("spotify-raw-50.bin", 1000000, 2262292, num_samples_to_forget, 50);
+    forget_bench("yahoosongs-raw-50.bin", 1000991, 624962, num_samples_to_forget, 50);
 }
 
 fn forget_bench(
     index_file: &str,
     num_rows: usize,
     num_cols: usize,
-    num_repetitions: usize,)
+    num_repetitions: usize,
+    k: usize,)
 {
     let mut index: SparseTopKIndex = deserialize_from(num_rows, num_cols, index_file);
 
@@ -73,5 +60,5 @@ fn forget_bench(
     }
 
     //println!("{:?}, p50: {:?}, p90: {:?}", index_file, p50.quantile(), p90.quantile());
-    println!("{:?},{:?},{:?}", index_file, p50.quantile(), p90.quantile());
+    println!("{:?},{:?},{:?},{:?}", index_file, k, p50.quantile(), p90.quantile());
 }
