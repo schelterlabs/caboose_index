@@ -82,7 +82,8 @@ impl TopK {
 
         if self.heap.len() == k {
             let old_top = self.heap.peek().unwrap();
-            if old_top.row == update.row && old_top.similarity > update.similarity {
+            //if old_top.row == update.row && old_top.similarity > update.similarity {
+            if old_top.similarity > update.similarity {
                 return NeedsFullRecomputation
             }
         }
