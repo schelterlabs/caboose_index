@@ -10,16 +10,16 @@ use caboose_index::serialize::serialize_to_file;
 
 fn main() {
 
-    let k = 100;
+    let k = 50;
 
-    serialize("tifu-instacart.npz", 30000, 28438, k, "tifu-instacart-100.bin");
-    serialize("pernir-instacart.npz", 30000, 43936, k, "pernir-instacart-100.bin");
-    serialize("synthetic-10000-50000-0.02.npz", 10000, 50000, k, "synthetic10-raw-100.bin");
-    serialize("movielens10m-raw.npz", 69879, 10678, k, "movielens10m-raw-100.bin");
-    serialize("lastfm-raw.npz", 993, 174078, k, "lastfm-raw-100.bin");
-    serialize("synthetic-100000-50000-0.01.npz", 100000, 50000, k, "synthetic50-raw-100.bin");
-    serialize("spotify-raw.npz", 1000000, 2262292, k, "spotify-raw-100.bin");
-    serialize("yahoosongs-raw.npz", 1000991, 624962, k, "yahoosongs-raw-100.bin");
+    serialize("tifu-instacart.npz", 30000, 28438, k, "tifu-instacart-50.bin");
+    serialize("pernir-instacart.npz", 30000, 43936, k, "pernir-instacart-50.bin");
+    // serialize("synthetic-10000-50000-0.02.npz", 10000, 50000, k, "synthetic10-raw-100.bin");
+    // serialize("movielens10m-raw.npz", 69879, 10678, k, "movielens10m-raw-100.bin");
+    // serialize("lastfm-raw.npz", 993, 174078, k, "lastfm-raw-100.bin");
+    // serialize("synthetic-100000-50000-0.01.npz", 100000, 50000, k, "synthetic50-raw-100.bin");
+    // serialize("spotify-raw.npz", 1000000, 2262292, k, "spotify-raw-100.bin");
+    // serialize("yahoosongs-raw.npz", 1000991, 624962, k, "yahoosongs-raw-100.bin");
 }
 
 fn serialize(

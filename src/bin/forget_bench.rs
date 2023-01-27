@@ -22,14 +22,23 @@ fn main() {
     forget_bench("spotify-raw-10.bin", 1000000, 2262292, num_samples_to_forget, 10);
     forget_bench("yahoosongs-raw-10.bin", 1000991, 624962, num_samples_to_forget, 10);
 
-    forget_bench("tifu-instacart-900.bin", 30000, 28438, num_samples_to_forget, 50);
-    forget_bench("pernir-instacart-300.bin", 30000, 43936, num_samples_to_forget, 50);
+    forget_bench("tifu-instacart-50.bin", 30000, 28438, num_samples_to_forget, 50);
+    forget_bench("pernir-instacart-50.bin", 30000, 43936, num_samples_to_forget, 50);
     forget_bench("synthetic10-raw-50.bin", 10000, 50000, num_samples_to_forget, 50);
     forget_bench("movielens10m-raw-50.bin", 69879, 10678, num_samples_to_forget, 50);
     forget_bench("lastfm-raw-50.bin", 993, 174078, num_samples_to_forget, 50);
     forget_bench("synthetic50-raw-50.bin", 100000, 50000, num_samples_to_forget, 50);
     forget_bench("spotify-raw-50.bin", 1000000, 2262292, num_samples_to_forget, 50);
     forget_bench("yahoosongs-raw-50.bin", 1000991, 624962, num_samples_to_forget, 50);
+
+    forget_bench("tifu-instacart-100.bin", 30000, 28438, num_samples_to_forget, 100);
+    forget_bench("pernir-instacart-100.bin", 30000, 43936, num_samples_to_forget, 100);
+    forget_bench("synthetic10-raw-100.bin", 10000, 50000, num_samples_to_forget, 100);
+    forget_bench("movielens10m-raw-100.bin", 69879, 10678, num_samples_to_forget, 100);
+    forget_bench("lastfm-raw-100.bin", 993, 174078, num_samples_to_forget, 100);
+    forget_bench("synthetic50-raw-100.bin", 100000, 50000, num_samples_to_forget, 100);
+    forget_bench("spotify-raw-100.bin", 1000000, 2262292, num_samples_to_forget, 100);
+    forget_bench("yahoosongs-raw-100.bin", 1000991, 624962, num_samples_to_forget, 100);
 }
 
 fn forget_bench(
