@@ -201,31 +201,34 @@ impl SparseTopKIndex {
 
         let data = self.representations.data();
         let indices = self.representations.indices();
-        let indptr = self.representations.indptr();
+        let indptr_sprs = self.representations.indptr();
         let data_t = self.representations_transposed.data();
         let indices_t = self.representations_transposed.indices();
-        let indptr_t = self.representations_transposed.indptr();
+        let indptr_t_sprs = self.representations_transposed.indptr();
 
         let start_time = Instant::now();
 
-        let column_indices: Vec<_> = indptr.outer_inds_sz(row).collect();
+        let ptr_indices: Vec<_> = indptr_sprs.outer_inds_sz(row).collect();
         let num_cores = get_physical();
-        let chunk_size = std::cmp::max(1, column_indices.len() / num_cores);
+        let chunk_size = std::cmp::max(1, ptr_indices.len() / num_cores);
 
-        let accs: Vec<_> = column_indices.par_chunks(chunk_size).map(|column_range| {
+        let accs: Vec<_> = ptr_indices.par_chunks(chunk_size).map(|ptr_range| {
+
+            let indptr_t = indptr_t_sprs.raw_storage();
+
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
-            for column_index in column_range {
-                let value = data[*column_index];
-                for other_row in indptr_t.outer_inds_sz(indices[*column_index]) {
-                    accumulator.add_to(indices_t[other_row], data_t[other_row] * value.clone());
+            for ptr in ptr_range {
+                let value = data[*ptr];
+                for other_row in indptr_t[indices[*ptr]]..indptr_t[indices[*ptr]+1] {
+                    accumulator.add_to(indices_t[other_row], data_t[other_row] * value);
                 }
             }
 
             accumulator
         }).collect();
 
-        let all_directly_affected_rows: Vec<usize> = indptr_t.outer_inds_sz(column)
+        let all_directly_affected_rows: Vec<usize> = indptr_t_sprs.outer_inds_sz(column)
             .map(|i| indices_t[i])
             .collect();
 
@@ -307,23 +310,27 @@ impl SparseTopKIndex {
         self.topk_per_row[row] = topk;
         let change_apply_duration = (Instant::now() - start_time).as_millis();
 
+        let indptr = indptr_sprs.raw_storage();
+        let indptr_t = indptr_t_sprs.raw_storage();
+
         let mut accumulator = RowAccumulator::new(num_rows.clone());
         let start_time = Instant::now();
         // TODO is it worth to parallelize this?
         for row_to_recompute in rows_to_fully_recompute {
 
-            let row_index_to_recompute = row_to_recompute as usize;
-            for column_index in indptr.outer_inds_sz(row_index_to_recompute) {
-                let value = data[column_index];
-                for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
-                    accumulator.add_to(indices_t[other_row], data_t[other_row] * value.clone());
+            let row_index = row_to_recompute as usize;
+            //for column_index in indptr.outer_inds_sz(row_index_to_recompute) {
+            for ptr in indptr[row_index]..indptr[row_index + 1] {
+                let value = data[ptr];
+                //for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
+                for other_ptr in indptr_t[indices[ptr]]..indptr_t[indices[ptr] + 1] {
+                    accumulator.add_to(indices_t[other_ptr], data_t[other_ptr] * value);
                 }
             }
 
-            let topk = accumulator.topk_and_clear(row_index_to_recompute, self.k,
-                                                  &similarity, &self.norms);
+            let topk = accumulator.topk_and_clear(row_index, self.k, &similarity, &self.norms);
 
-            self.topk_per_row[row_index_to_recompute] = topk;
+            self.topk_per_row[row_index] = topk;
         }
         let recompute_duration = (Instant::now() - start_time).as_millis();
 

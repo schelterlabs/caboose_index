@@ -24,7 +24,7 @@ impl RowAccumulator {
             head: NO_HEAD,
         }
     }
-    
+
     #[inline(always)]
     pub(crate) fn add_to(&mut self, column: usize, value: f64) {
         self.sums[column] += value;

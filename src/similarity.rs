@@ -14,6 +14,7 @@ pub struct Cosine {}
 
 impl Similarity for Cosine {
 
+    #[inline(always)]
     fn from_norms(&self, dot_product: f64, norm_a: f64, norm_b: f64) -> f64 {
         dot_product / (norm_a * norm_b)
     }
