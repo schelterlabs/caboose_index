@@ -79,10 +79,10 @@ impl SparseTopKIndex {
     ) {
         let data = representations.data();
         let indices = representations.indices();
-        let indptr = representations.indptr().raw_storage();
         let data_t = representations_transposed.data();
         let indices_t = representations_transposed.indices();
-        let indptr_t = representations_transposed.indptr().raw_storage();
+        let indptr_sprs = representations.indptr();
+        let indptr_t_sprs = representations_transposed.indptr();
 
         let bar = ProgressBar::new(num_rows as u64);
         let template = "{wide_bar} | {pos}/{len} | Elapsed: {elapsed_precise}, ETA: {eta_precise}";
@@ -91,6 +91,10 @@ impl SparseTopKIndex {
 
         let topk_partitioned: Vec<_> = row_ranges.map(|range| {
 
+            let indptr = indptr_sprs.raw_storage();
+            let indptr_t = indptr_t_sprs.raw_storage();
+
+            // We need to get rid of these allocations and do them only once per thread
             let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
