@@ -79,10 +79,10 @@ impl SparseTopKIndex {
     ) {
         let data = representations.data();
         let indices = representations.indices();
-        let indptr = representations.indptr();
+        let indptr = representations.indptr().raw_storage();
         let data_t = representations_transposed.data();
         let indices_t = representations_transposed.indices();
-        let indptr_t = representations_transposed.indptr();
+        let indptr_t = representations_transposed.indptr().raw_storage();
 
         let bar = ProgressBar::new(num_rows as u64);
         let template = "{wide_bar} | {pos}/{len} | Elapsed: {elapsed_precise}, ETA: {eta_precise}";
@@ -91,17 +91,15 @@ impl SparseTopKIndex {
 
         let topk_partitioned: Vec<_> = row_ranges.map(|range| {
 
-            // eprintln!("===Starting on partition: {}->{}",
-            //           range.first().unwrap(), range.last().unwrap());
-
             let mut topk_per_row: Vec<TopK> = Vec::with_capacity(range.len());
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
-            //let mut num_rows_processed = 0;
             for row in range {
-                for column_index in indptr.outer_inds_sz(*row) {
-                    let value = data[column_index];
-                    for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
+                for ptr in indptr[*row]..indptr[*row + 1] {
+                    let value = data[ptr];
+                    dbg!(&ptr);
+                    dbg!(&indices[ptr]);
+                    for other_row in indptr_t[indices[ptr]]..indptr_t[indices[ptr] + 1] {
                         accumulator.add_to(
                             indices_t[other_row],
                             data_t[other_row] * value.clone()
@@ -113,7 +111,7 @@ impl SparseTopKIndex {
                 topk_per_row.push(topk);
                 shared_progress.lock().unwrap().inc(1 as u64);
             }
-            //shared_progress.lock().unwrap().inc(range.len() as u64);
+
             (range, topk_per_row)
         }).collect();
 
