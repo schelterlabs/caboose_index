@@ -101,8 +101,6 @@ impl SparseTopKIndex {
             for row in range {
                 for ptr in indptr[*row]..indptr[*row + 1] {
                     let value = data[ptr];
-                    dbg!(&ptr);
-                    dbg!(&indices[ptr]);
                     for other_row in indptr_t[indices[ptr]]..indptr_t[indices[ptr] + 1] {
                         accumulator.add_to(
                             indices_t[other_row],
