@@ -111,9 +111,8 @@ impl SparseTopKIndex {
 
                 let topk = accumulator.topk_and_clear(*row, k, similarity, &norms);
                 topk_per_row.push(topk);
-                shared_progress.lock().unwrap().inc(1 as u64);
             }
-
+            shared_progress.lock().unwrap().inc(range.len() as u64);
             (range, topk_per_row)
         }).collect();
 
