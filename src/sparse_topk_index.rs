@@ -103,16 +103,15 @@ impl SparseTopKIndex {
                     let value = data[ptr];
                     for other_row in indptr_t[indices[ptr]]..indptr_t[indices[ptr] + 1] {
                         accumulator.add_to(
-                            indices_t[other_row],
-                            data_t[other_row] * value.clone()
+                            indices_t[other_row], data_t[other_row] * value
                         );
                     }
                 }
 
                 let topk = accumulator.topk_and_clear(*row, k, similarity, &norms);
                 topk_per_row.push(topk);
+                shared_progress.lock().unwrap().inc(1 as u64);
             }
-            shared_progress.lock().unwrap().inc(range.len() as u64);
             (range, topk_per_row)
         }).collect();
 
