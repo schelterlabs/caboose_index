@@ -89,6 +89,7 @@ impl SparseTopKIndex {
         bar.set_style(ProgressStyle::default_bar().template(template).unwrap());
         let shared_progress = Mutex::new(bar);
 
+        // TODO use a thread local here for the accumulator
         let topk_partitioned: Vec<_> = row_ranges.map(|range| {
 
             let indptr = indptr_sprs.raw_storage();
@@ -99,12 +100,23 @@ impl SparseTopKIndex {
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
             for row in range {
-                for ptr in indptr[*row]..indptr[*row + 1] {
-                    let value = data[ptr];
-                    for other_row in indptr_t[indices[ptr]]..indptr_t[indices[ptr] + 1] {
-                        accumulator.add_to(
-                            indices_t[other_row], data_t[other_row] * value
-                        );
+
+                let ptr_start = unsafe { *indptr.get_unchecked(*row) };
+                let ptr_end = unsafe { *indptr.get_unchecked(*row + 1) };
+
+//                for ptr in indptr[*row]..indptr[*row + 1] {
+                for ptr in ptr_start..ptr_end {
+                    let value = unsafe { * data.get_unchecked(ptr) };
+
+                    let other_ptr_start = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(ptr)) };
+                    let other_ptr_end = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(ptr) + 1) };
+
+                    //for other_row in indptr_t[indices[ptr]]..indptr_t[indices[ptr] + 1] {
+                    for other_ptr in other_ptr_start..other_ptr_end {
+                        let index = unsafe { *indices_t.get_unchecked(other_ptr) };
+                        let value_t = unsafe { *data_t.get_unchecked(other_ptr) };
+                        //accumulator.add_to(indices_t[other_row], data_t[other_row] * value);
+                        accumulator.add_to(index, value_t * value);
                     }
                 }
 
@@ -319,12 +331,23 @@ impl SparseTopKIndex {
         for row_to_recompute in rows_to_fully_recompute {
 
             let row_index = row_to_recompute as usize;
-            //for column_index in indptr.outer_inds_sz(row_index_to_recompute) {
-            for ptr in indptr[row_index]..indptr[row_index + 1] {
-                let value = data[ptr];
-                //for other_row in indptr_t.outer_inds_sz(indices[column_index]) {
-                for other_ptr in indptr_t[indices[ptr]]..indptr_t[indices[ptr] + 1] {
-                    accumulator.add_to(indices_t[other_ptr], data_t[other_ptr] * value);
+
+            let ptr_start = unsafe { *indptr.get_unchecked(row_index) };
+            let ptr_end = unsafe { *indptr.get_unchecked(row_index + 1) };
+
+            //for ptr in indptr[row_index]..indptr[row_index + 1] {
+            for ptr in ptr_start..ptr_end {
+                let value = unsafe { data.get_unchecked(ptr) };
+
+                let other_ptr_start = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(ptr)) };
+                let other_ptr_end = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(ptr) + 1) };
+
+                //for other_ptr in indptr_t[indices[ptr]]..indptr_t[indices[ptr] + 1] {
+                for other_ptr in other_ptr_start..other_ptr_end {
+                    let index = unsafe { *indices_t.get_unchecked(other_ptr) };
+                    let value_t = unsafe { *data_t.get_unchecked(other_ptr) };
+                    //accumulator.add_to(indices_t[other_ptr], data_t[other_ptr] * value);
+                    accumulator.add_to(index, value_t * value);
                 }
             }
 

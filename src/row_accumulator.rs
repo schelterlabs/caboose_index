@@ -27,10 +27,13 @@ impl RowAccumulator {
 
     #[inline(always)]
     pub(crate) fn add_to(&mut self, column: usize, value: f64) {
-        self.sums[column] += value;
+        //self.sums[column] += value;
+        unsafe { *self.sums.get_unchecked_mut(column) += value };
 
-        if self.non_zeros[column] == NOT_OCCUPIED {
-            self.non_zeros[column] = self.head.clone();
+        //if self.non_zeros[column] == NOT_OCCUPIED {
+        if unsafe { *self.non_zeros.get_unchecked(column) } == NOT_OCCUPIED {
+            //self.non_zeros[column] = self.head.clone();
+            unsafe { *self.non_zeros.get_unchecked_mut(column) = self.head.clone() };
             self.head = column as isize;
         }
     }
@@ -110,9 +113,15 @@ impl RowAccumulator {
         while self.head != NO_HEAD {
             let other_row = self.head as usize;
 
+            let sum = unsafe { *self.sums.get_unchecked(other_row) };
             // We can have zero dot products after deletions
-            if other_row != row && self.sums[other_row] != NONE {
-                let sim = similarity.from_norms(self.sums[other_row], norms[row], norms[other_row]);
+            if other_row != row && sum != NONE {
+            //if other_row != row && self.sums[other_row] != NONE {
+
+                let norm = unsafe { *norms.get_unchecked(row) };
+                let other_norm = unsafe { *norms.get_unchecked(other_row) };
+                //let sim = similarity.from_norms(self.sums[other_row], norms[row], norms[other_row]);
+                let sim = similarity.from_norms(sum, norm, other_norm);
                 let scored_row = SimilarRow::new(other_row as RowIndex, sim as Score);
 
                 if topk_similar_rows.len() < k {
