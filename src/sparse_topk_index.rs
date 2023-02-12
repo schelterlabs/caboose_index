@@ -231,9 +231,17 @@ impl SparseTopKIndex {
             let mut accumulator = RowAccumulator::new(num_rows.clone());
 
             for ptr in ptr_range {
-                let value = data[*ptr];
-                for other_row in indptr_t[indices[*ptr]]..indptr_t[indices[*ptr]+1] {
-                    accumulator.add_to(indices_t[other_row], data_t[other_row] * value);
+                //let value = data[*ptr];
+                let value = unsafe { *data.get_unchecked(*ptr) };
+                let other_ptr_start = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(*ptr)) };
+                let other_ptr_end = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(*ptr) + 1) };
+
+                //for other_row in indptr_t[indices[*ptr]]..indptr_t[indices[*ptr]+1] {
+                for other_row in other_ptr_start..other_ptr_end {
+                    let index = unsafe { *indices_t.get_unchecked(other_row) };
+                    let value_t = unsafe { *data_t.get_unchecked(other_row) };
+                    //accumulator.add_to(indices_t[other_row], data_t[other_row] * value);
+                    accumulator.add_to(index, value_t * value);
                 }
             }
 
